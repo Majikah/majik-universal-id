@@ -1,27 +1,6 @@
 /**
- * MajikSignatureClient.ts
+ * MajikUniversalIdClient.ts
  *
- * High-level wrapper client for MajikSignature.
- *
- * Manages MajikKey accounts (via the shared static MajikKeyStore) and
- * contacts (via a shared MajikContactDirectory) to provide a convenient
- * interface for signing content and verifying signatures.
- *
- * Designed to be used alongside MajikMessage in the same webapp.
- * Accounts are automatically shared via the static MajikKeyStore.
- * Contacts are shared by passing the same MajikContactDirectory instance
- * to both MajikMessage and MajikSignatureClient at construction time.
- *
- * Events:
- *   sign         — fired after successful signing
- *   verify       — fired after any verification attempt (pass or fail)
- *   unlock       — fired when an account is unlocked
- *   lock         — fired when an account is locked
- *   new-account  — fired when an account is registered
- *   new-contact  — fired when a contact is added
- *   removed-account — fired when an account is removed
- *   removed-contact — fired when a contact is removed
- *   error        — fired on any internal error
  */
 
 import { MajikKey } from "@majikah/majik-key";
@@ -34,7 +13,6 @@ import {
 } from "./core/contacts/majik-contact";
 
 import { MajikSignature } from "@majikah/majik-signature";
-// import { MajikSignature } from "../../majik-signature";
 import type {
   MajikSignatureJSON,
   MajikSignerPublicKeys,
@@ -69,9 +47,16 @@ import {
   ImageVerificationResult,
 } from "@majikah/majik-signature/dist/core/stamp";
 
+import {
+  CreateUniversalIDOptions,
+  MajikUniversalID,
+} from "@majikah/majik-universal-id";
+import { MajikUser } from "@thezelijah/majik-user";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type MajikSignatureClientEvents =
+type MajikUniversalIdClientEvents =
+  | "create-id"
   | "sign"
   | "verify"
   | "unlock"
@@ -83,19 +68,21 @@ type MajikSignatureClientEvents =
   | "active-account-change"
   | "error";
 
-interface MajikSignatureClientStatic<T extends MajikSignatureClient> {
-  new (config: MajikSignatureClientConfig, id?: string): T;
-  fromJSON(json: MajikSignatureClientJSON): Promise<T>;
+interface MajikUniversalIdClientStatic<T extends MajikUniversalIdClient> {
+  new (config: MajikUniversalIdClientConfig, id?: string): T;
+  fromJSON(json: MajikUniversalIdClientJSON): Promise<T>;
 }
 
 type EventCallback = (...args: any[]) => void;
 
-export interface MajikSignatureClientConfig {
+export interface MajikUniversalIdClientConfig {
   /**
    * Shared contact directory. Pass the same instance used by MajikMessage
    * so that contacts stay in sync between both clients automatically.
    */
   contactDirectory?: MajikContactDirectory;
+
+  user?: MajikUser;
 }
 
 export interface SignResult {
@@ -110,7 +97,7 @@ export interface VerifyResult extends VerificationResult {
   signerLabel?: string; // resolved from contact directory if available
 }
 
-export interface MajikSignatureClientJSON {
+export interface MajikUniversalIdClientJSON {
   id: string;
   contacts: MajikContactDirectoryData;
   ownAccounts?: {
@@ -119,15 +106,15 @@ export interface MajikSignatureClientJSON {
   };
 }
 
-// ─── MajikSignatureClient ─────────────────────────────────────────────────────
+// ─── MajikUniversalIdClient ─────────────────────────────────────────────────────
 
-export class MajikSignatureClient {
+export class MajikUniversalIdClient {
   private userProfile: string = "default";
   private readonly _id: string;
   private _contactDirectory: MajikContactDirectory;
   private _ownAccounts: Map<string, MajikContact> = new Map();
   private _ownAccountsOrder: string[] = [];
-  private _listeners: Map<MajikSignatureClientEvents, EventCallback[]> =
+  private _listeners: Map<MajikUniversalIdClientEvents, EventCallback[]> =
     new Map();
 
   private autosaveTimer: number | null = null;
@@ -135,12 +122,17 @@ export class MajikSignatureClient {
   private readonly autosaveIntervalMs = 15_000;
   private readonly autosaveDebounceMs = 500;
 
-  constructor(config: MajikSignatureClientConfig = {}) {
+  private user_data: MajikUser | null = null;
+
+  constructor(config: MajikUniversalIdClientConfig) {
     this._id = crypto.randomUUID();
     this._contactDirectory =
       config.contactDirectory ?? new MajikContactDirectory();
 
-    const events: MajikSignatureClientEvents[] = [
+    this.user_data = config.user || null;
+
+    const events: MajikUniversalIdClientEvents[] = [
+      "create-id",
       "sign",
       "verify",
       "unlock",
@@ -153,6 +145,27 @@ export class MajikSignatureClient {
       "active-account-change",
     ];
     events.forEach((e) => this._listeners.set(e, []));
+  }
+
+  get user(): MajikUser | null {
+    return this.user_data;
+  }
+
+  set user(user: MajikUser) {
+    if (!user) {
+      throw new Error("User cannot be null or undefined");
+    }
+
+    const userValidation = user.validate();
+
+    if (!userValidation.isValid) {
+      throw new Error(userValidation.errors.join(", "));
+    }
+    this.user_data = user;
+  }
+
+  clearUser(): void {
+    this.user_data = null;
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────
@@ -1895,7 +1908,7 @@ export class MajikSignatureClient {
 
   // ── Serialization ─────────────────────────────────────────────────────────
 
-  async toJSON(): Promise<MajikSignatureClientJSON> {
+  async toJSON(): Promise<MajikUniversalIdClientJSON> {
     const accounts: SerializedMajikContact[] = [];
     for (const id of this._ownAccountsOrder) {
       const acct = this._ownAccounts.get(id);
@@ -1912,17 +1925,18 @@ export class MajikSignatureClient {
     };
   }
 
-  static async fromJSON(
-    json: MajikSignatureClientJSON,
-    config: MajikSignatureClientConfig = {},
-  ): Promise<MajikSignatureClient> {
+  static async fromJSON<T extends MajikUniversalIdClient>(
+    this: new (config: MajikUniversalIdClientConfig, id?: string) => T,
+    json: MajikUniversalIdClientJSON,
+    config: MajikUniversalIdClientConfig = {},
+  ): Promise<T> {
     const directory = config.contactDirectory ?? new MajikContactDirectory();
 
     if (!config.contactDirectory) {
       await directory.fromJSON(json.contacts);
     }
 
-    const client = new MajikSignatureClient({ contactDirectory: directory });
+    const client = new this({ contactDirectory: directory });
 
     try {
       if (json.ownAccounts && Array.isArray(json.ownAccounts.accounts)) {
@@ -1981,11 +1995,11 @@ export class MajikSignatureClient {
 
   // ── Events ────────────────────────────────────────────────────────────────
 
-  on(event: MajikSignatureClientEvents, callback: EventCallback): void {
+  on(event: MajikUniversalIdClientEvents, callback: EventCallback): void {
     this._listeners.get(event)?.push(callback);
   }
 
-  off(event: MajikSignatureClientEvents, callback?: EventCallback): void {
+  off(event: MajikUniversalIdClientEvents, callback?: EventCallback): void {
     const cbs = this._listeners.get(event);
     if (!cbs?.length) return;
     if (callback) {
@@ -2011,13 +2025,13 @@ export class MajikSignatureClient {
     }
   }
 
-  private _emit(event: MajikSignatureClientEvents, ...args: any[]): void {
+  private _emit(event: MajikUniversalIdClientEvents, ...args: any[]): void {
     this._listeners.get(event)?.forEach((cb) => {
       try {
         cb(...args);
       } catch (err) {
         console.warn(
-          `MajikSignatureClient event handler error (${event}):`,
+          `MajikUniversalIdClient event handler error (${event}):`,
           err,
         );
       }
@@ -2068,7 +2082,7 @@ export class MajikSignatureClient {
         this.userProfile,
       );
     } catch (err) {
-      console.error("Failed to save MajikSignatureClient state:", err);
+      console.error("Failed to save MajikUniversalIdClient state:", err);
     }
   }
 
@@ -2080,20 +2094,20 @@ export class MajikSignatureClient {
       );
       if (!saved?.data) return;
       const loaded = await loadSavedMajikFileData(saved.data);
-      const restored = await MajikSignatureClient.fromJSON(
-        loaded.j as MajikSignatureClientJSON,
+      const restored = await MajikUniversalIdClient.fromJSON(
+        loaded.j as MajikUniversalIdClientJSON,
       );
       this._contactDirectory = restored._contactDirectory;
       this._ownAccounts = restored._ownAccounts;
       this._ownAccountsOrder = [...restored._ownAccountsOrder];
     } catch (err) {
-      console.error("Failed to load MajikSignatureClient state:", err);
+      console.error("Failed to load MajikUniversalIdClient state:", err);
     }
   }
 
-  static async loadOrCreate<T extends MajikSignatureClient>(
-    this: MajikSignatureClientStatic<T>,
-    config: MajikSignatureClientConfig,
+  static async loadOrCreate<T extends MajikUniversalIdClient>(
+    this: MajikUniversalIdClientStatic<T>,
+    config: MajikUniversalIdClientConfig,
     userProfile = "default",
   ): Promise<T> {
     try {
@@ -2101,13 +2115,13 @@ export class MajikSignatureClient {
       if (saved?.data) {
         const loaded = await loadSavedMajikFileData(saved.data);
         const instance = (await this.fromJSON(
-          loaded.j as MajikSignatureClientJSON,
+          loaded.j as MajikUniversalIdClientJSON,
         )) as T;
         instance.attachAutosaveHandlers();
         return instance;
       }
     } catch (err) {
-      console.warn("Error loading saved MajikSignatureClient state:", err);
+      console.warn("Error loading saved MajikUniversalIdClient state:", err);
     }
 
     const created = new this(config);
@@ -2152,5 +2166,29 @@ export class MajikSignatureClient {
         `Failed to reset data: ${err instanceof Error ? err.message : err}`,
       );
     }
+  }
+
+  /**
+   * Create a new MajikUniversalID from a MajikUser and an unlocked MajikKey.
+   *
+   * The key must be unlocked and have all key fields: edPublicKey, mlDsaPublicKey,
+   * mlKemPublicKey (for encryption), and mlKemSecretKey is not needed here —
+   * only the public key is used during creation.
+   *
+   * Private personal info is immediately encrypted with the bound key's
+   * ML-KEM-768 public key. The rehydrated value is kept in-memory so
+   * privateInfo is accessible right after create() without a separate call.
+   *
+   * The identity starts at IDTier.UNVERIFIED.
+   */
+  async createUniversalID(
+    user: MajikUser,
+    key: MajikKey,
+    options: CreateUniversalIDOptions,
+  ): Promise<MajikUniversalID> {
+    const createdID = MajikUniversalID.create(user, key, options);
+
+    this._emit("create-id", createdID);
+    return createdID;
   }
 }

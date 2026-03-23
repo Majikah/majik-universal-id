@@ -54,19 +54,15 @@ import {
 } from "./core/schema";
 
 import type {
-  MajikID,
   MajikIDMetadata,
   MajikIDSignature,
   MajikIDSettings,
   MajikIDPublicView,
   MajikIDVerificationSummary,
   MajikKeyPublicBundle,
-  MajikSignatureRecord,
-  MajikSignatureEnvelope,
   MajikUserRef,
   PublicProfile,
   PrivatePersonalInfo,
-  PrivateInfoField,
   EncryptedPrivateInfo,
   PostalAddress,
   DiditVerification,
@@ -85,7 +81,6 @@ import type {
   FileVerificationResult,
   WebhookProcessResult,
   UserSyncAction,
-  SignatureAuditEntry,
   UniversalIDValidationResult,
   MajikUniversalIDJSON,
   FromJSONOptions,
@@ -124,22 +119,17 @@ import {
   computeIDHash,
   verifyIDHash,
   bytesToBase64,
-  base64ToBytes,
   objectToBase64,
   base64ToObject,
   bundleToSignerKeys,
   normalizeGender,
   normalizeToE164,
-  deriveIDTier,
-  computePassedStages,
   now,
   assertDefined,
   assertNonEmptyString,
   assertHasSigningKeys,
-  verifyWebhookSignature,
   isVerificationLocked,
   verificationLockDaysRemaining,
-  type IDHashKeyMaterial,
 } from "./core/utils";
 
 // ─────────────────────────────────────────────
@@ -160,7 +150,6 @@ export class MajikUniversalID {
   #user_ref: MajikUserRef;
   #metadata: MajikIDMetadata;
   #signature: MajikIDSignature;
-  #signature_records: MajikSignatureRecord[];
   #settings: MajikIDSettings;
   #last_update: ISODateTime;
 
@@ -175,7 +164,6 @@ export class MajikUniversalID {
     this.#user_ref = { ...data.user_ref };
     this.#metadata = this._deepCopyMetadata(data.metadata);
     this.#signature = { ...data.signature };
-    this.#signature_records = [...data.signature_records];
     this.#settings = JSON.parse(JSON.stringify(data.settings));
     this.#timestamp = data.timestamp;
     this.#last_update = data.last_update;
@@ -282,6 +270,36 @@ export class MajikUniversalID {
   }
 
   // ═══════════════════════════════════════════
+  // GETTERS — Verification Stages
+  // ═══════════════════════════════════════════
+
+  /**
+   * Returns the list of Didit stages that have been passed by this identity.
+   * Derived directly from DiditVerification.completed_stages.
+   *
+   * Stages appear in the order they were completed, not enum declaration order.
+   * An empty array means no stages have been passed (UNVERIFIED).
+   */
+  getPassedVerifications(): DiditStage[] {
+    return [...this.#metadata.didit.completed_stages];
+  }
+
+  /**
+   * Check whether a specific Didit stage has been passed.
+   *
+   * @param stage - A DiditStage enum value (e.g. DiditStage.LIVENESS)
+   * @returns true if the stage appears in completed_stages, false otherwise
+   *
+   * @example
+   * if (majikId.isVerificationPassed(DiditStage.PHONE_VERIFICATION)) {
+   *   // phone has been OTP-verified
+   * }
+   */
+  isVerificationPassed(stage: DiditStage): boolean {
+    return this.#metadata.didit.completed_stages.includes(stage);
+  }
+
+  // ═══════════════════════════════════════════
   // GETTERS — Key & Data
   // ═══════════════════════════════════════════
 
@@ -294,9 +312,6 @@ export class MajikUniversalID {
   }
   get settings(): Readonly<MajikIDSettings> {
     return JSON.parse(JSON.stringify(this.#settings));
-  }
-  get signatureRecords(): ReadonlyArray<MajikSignatureRecord> {
-    return [...this.#signature_records];
   }
 
   /**
@@ -439,7 +454,6 @@ export class MajikUniversalID {
       user_ref: userRef,
       metadata,
       signature,
-      signature_records: [],
       settings,
       timestamp,
       last_update: timestamp,
@@ -468,7 +482,6 @@ export class MajikUniversalID {
       user_ref: { ...this.#user_ref },
       metadata: this._serializeMetadata(),
       signature: { ...this.#signature },
-      signature_records: [...this.#signature_records],
       settings: JSON.parse(JSON.stringify(this.#settings)),
       timestamp: this.#timestamp,
       last_update: this.#last_update,
@@ -523,7 +536,6 @@ export class MajikUniversalID {
       const instance = new MajikUniversalID({
         ...data,
         signing_key: data.signing_key,
-        signature_records: data.signature_records ?? [],
       });
 
       // Attempt silent decryption if a key was provided
@@ -736,11 +748,7 @@ export class MajikUniversalID {
 
     try {
       const sig = await MajikSignature.sign(content, key, options);
-      this._storeSignatureRecord(
-        sig.toJSON(),
-        options?.label,
-        options?.contentType,
-      );
+
       this._touch();
       return sig;
     } catch (err) {
@@ -784,11 +792,7 @@ export class MajikUniversalID {
 
     try {
       const result = await MajikSignature.signFile(file, key, options);
-      this._storeSignatureRecord(
-        result.signature.toJSON(),
-        options?.label ?? `${result.mimeType} file`,
-        options?.contentType ?? result.mimeType,
-      );
+
       this._touch();
       return result as any;
     } catch (err) {
@@ -825,10 +829,6 @@ export class MajikUniversalID {
       const signerId = sig.signerId;
 
       if (signerId !== this.#signing_key.fingerprint) {
-        this._writeVerificationAudit(signerId, sig, false, {
-          outcome: SignatureVerificationOutcome.KEY_MISMATCH,
-          context,
-        });
         return {
           valid: false,
           signer_fingerprint: signerId,
@@ -843,13 +843,6 @@ export class MajikUniversalID {
         sig,
         publicKeys,
       );
-
-      this._writeVerificationAudit(signerId, sig, result.valid, {
-        outcome: result.valid
-          ? SignatureVerificationOutcome.VALID
-          : SignatureVerificationOutcome.INVALID_CONTENT_HASH,
-        context,
-      });
 
       return {
         valid: result.valid,
@@ -903,9 +896,6 @@ export class MajikUniversalID {
         file,
         this.#signing_key as any,
       );
-      this._writeVerificationAudit(signerId, embeddedSig, result.valid, {
-        context,
-      });
 
       return {
         valid: result.valid,
@@ -935,13 +925,6 @@ export class MajikUniversalID {
     return this.verifyContent(text, signature, context);
   }
 
-  /** Returns true if any signature record on this identity was made by the given fingerprint. */
-  hasSignatureFrom(fingerprint: string): boolean {
-    return this.#signature_records.some(
-      (r) => r.envelope.signer_id === fingerprint,
-    );
-  }
-
   // ═══════════════════════════════════════════
   // DIDIT — WEBHOOK PROCESSING
   // (does NOT require isMutable — it IS the graduation path)
@@ -962,8 +945,6 @@ export class MajikUniversalID {
     assertDefined(payload, "payload");
     assertDefined(headers, "headers");
     assertNonEmptyString(secret, "webhook secret");
-
-    await verifyWebhookSignature(payload as any, headers, secret);
 
     if (payload.vendor_data && payload.vendor_data !== this.#id) {
       throw new MajikUniversalIDWebhookPayloadError(
@@ -1201,45 +1182,6 @@ export class MajikUniversalID {
   }
 
   // ═══════════════════════════════════════════
-  // SIGNATURE RECORDS
-  // ═══════════════════════════════════════════
-
-  /** Revoke a signature record. Does NOT require isMutable. */
-  revokeSignatureRecord(recordId: string, reason?: string): this {
-    assertNonEmptyString(recordId, "recordId");
-
-    if (!this.#signature_records.find((r) => r.record_id === recordId)) {
-      throw new MajikUniversalIDValidationError(
-        `Signature record '${recordId}' not found`,
-        "recordId",
-      );
-    }
-
-    this.#signature_records = this.#signature_records.map((r) =>
-      r.record_id === recordId
-        ? {
-            ...r,
-            is_revoked: true,
-            revoked_at: now(),
-            revocation_reason: reason,
-          }
-        : r,
-    );
-    this._touch();
-    return this;
-  }
-
-  getActiveSignatureRecords(): MajikSignatureRecord[] {
-    return this.#signature_records.filter((r) => !r.is_revoked);
-  }
-
-  getSignatureRecordsByKey(fingerprint: string): MajikSignatureRecord[] {
-    return this.#signature_records.filter(
-      (r) => r.envelope.signer_id === fingerprint,
-    );
-  }
-
-  // ═══════════════════════════════════════════
   // PUBLIC VIEWS
   // ═══════════════════════════════════════════
 
@@ -1260,6 +1202,10 @@ export class MajikUniversalID {
         ml_dsa_public_key: this.#signing_key.ml_dsa_public_key,
         registered_at: this.#signing_key.registered_at,
       },
+      verification_stages: MajikUniversalID._buildVerificationStagesMap(
+        this.#metadata.didit.completed_stages,
+      ),
+      user_id: this.#user_id,
     };
   }
 
@@ -1444,72 +1390,6 @@ export class MajikUniversalID {
     } catch {
       // Silent — private info stays encrypted-only in this session
     }
-  }
-
-  private _storeSignatureRecord(
-    json: MajikSignatureJSON,
-    label?: string,
-    contentType?: string,
-  ): void {
-    const envelope: MajikSignatureEnvelope = {
-      version: json.version,
-      signer_id: json.signerId,
-      signer_ed_public_key: json.signerEdPublicKey,
-      signer_ml_dsa_public_key: json.signerMlDsaPublicKey,
-      content_hash: json.contentHash,
-      ed_signature: json.edSignature,
-      ml_dsa_signature: json.mlDsaSignature,
-      content_type: json.contentType ?? contentType,
-      signed_at: json.timestamp,
-    };
-
-    this.#signature_records.push({
-      record_id: uuidv7(),
-      envelope,
-      serialized: objectToBase64(json),
-      content_label: label,
-      content_type: json.contentType ?? contentType,
-      registered_at: now(),
-      is_revoked: false,
-      verification_log: [],
-    });
-  }
-
-  private _writeVerificationAudit(
-    fingerprint: string,
-    sig: MajikSignature,
-    valid: boolean,
-    opts: { outcome?: SignatureVerificationOutcome; context?: string },
-  ): void {
-    const record = this.#signature_records.find(
-      (r) =>
-        r.envelope.content_hash === sig.contentHash &&
-        r.envelope.signer_id === fingerprint,
-    );
-    if (!record) return;
-
-    const entry: SignatureAuditEntry = {
-      verification_id: uuidv7(),
-      signature_record_id: record.record_id,
-      verified_with_fingerprint: fingerprint,
-      outcome:
-        opts.outcome ??
-        (valid
-          ? SignatureVerificationOutcome.VALID
-          : SignatureVerificationOutcome.ERROR),
-      both_algorithms_passed: valid,
-      ed25519_passed: valid,
-      ml_dsa_passed: valid,
-      content_hash_matched: valid,
-      verified_at: now(),
-      context: opts.context,
-    };
-
-    this.#signature_records = this.#signature_records.map((r) =>
-      r.record_id === record.record_id
-        ? { ...r, verification_log: [...(r.verification_log ?? []), entry] }
-        : r,
-    );
   }
 
   private _computeUserSyncActions(
@@ -1775,6 +1655,29 @@ export class MajikUniversalID {
       signed_fields: signedFields,
       signed_at: json.timestamp,
       serialized_envelope: btoa(JSON.stringify(json)),
+    };
+  }
+
+  /**
+   * Derives a complete Record<DiditStage, boolean> from a completed_stages array.
+   * Every DiditStage key is always present so consumers can iterate without
+   * needing to know the full enum set.
+   */
+  private static _buildVerificationStagesMap(
+    completedStages: DiditStage[],
+  ): Record<DiditStage, boolean> {
+    return {
+      [DiditStage.ID_VERIFICATION]: completedStages.includes(
+        DiditStage.ID_VERIFICATION,
+      ),
+      [DiditStage.LIVENESS]: completedStages.includes(DiditStage.LIVENESS),
+      [DiditStage.FACE_MATCH]: completedStages.includes(DiditStage.FACE_MATCH),
+      [DiditStage.PHONE_VERIFICATION]: completedStages.includes(
+        DiditStage.PHONE_VERIFICATION,
+      ),
+      [DiditStage.IP_ANALYSIS]: completedStages.includes(
+        DiditStage.IP_ANALYSIS,
+      ),
     };
   }
 

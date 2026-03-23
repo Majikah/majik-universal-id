@@ -1,4 +1,4 @@
-export * from "./majik-signature-client";
+export * from "./majik-universal-id-client";
 export type * from "./core/types";
 export * from "./core/contacts/majik-contact";
 export * from "./core/contacts/majik-contact-directory";

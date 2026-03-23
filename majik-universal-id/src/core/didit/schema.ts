@@ -10,6 +10,59 @@
  *
  * All types reference ../schema for MajikID domain types.
  * No class implementations — pure type/interface layer.
+ *
+ * ── CHANGELOG (vs previous version) ────────────────────────────────────────
+ *
+ * DiditSessionStatus
+ *   + "Kyc Expired"  — observed in samples, was missing
+ *   + "Resubmitted"  — observed in samples, was missing
+ *
+ * DiditWarning
+ *   + feature        — present in Declined sample ("ID_VERIFICATION")
+ *   + node_id        — present in Declined sample ("feature_ocr")
+ *   (risk, log_type, short_description, long_description were already present)
+ *
+ * DiditRawIDVerification
+ *   + front_image_quality_score / back_image_quality_score made optional+nullable
+ *     (absent in Declined / minimal payloads)
+ *   + matches typed as DiditIDVerificationMatch[] | null (null in Declined sample)
+ *   + warnings typed as DiditWarning[] (was already correct, confirmed present
+ *     even when status = Declined with a non-empty array)
+ *   + extra_fields: added explicit first_surname / second_surname (observed in
+ *     all id_verification samples alongside the existing [key] escape hatch)
+ *
+ * DiditRawLivenessCheck
+ *   + face_quality / face_luminance typed as null (both null in every sample)
+ *   + method: added "FLASHING" literal (observed, was only "ACTIVE_3D"|"PASSIVE")
+ *   + matches typed as unknown[] | null
+ *
+ * DiditRawFaceMatch
+ *   + source_image_session_id: string | null  (present in samples, was missing)
+ *
+ * DiditRawIPAnalysis
+ *   + browser_family / os_family / platform / device_brand — confirmed present
+ *   + device_fingerprint: string | null  (null in all samples)
+ *   + device_model: string | null        (null in all samples)
+ *   + time_zone_offset typed as number (samples show integer, was string)
+ *   + ip / id_document / poa_document distance blocks typed explicitly
+ *     (was locations_info?: DiditLocationsInfo — renamed to match real payload shape)
+ *   + ip_country_code confirmed present (was optional, now required in full payloads)
+ *
+ * DiditDecision
+ *   + session_url renamed from session_url (already present, confirmed)
+ *   + All array node fields typed as T[] | null (null observed when stage not
+ *     included in workflow, e.g. aml_screenings: null in minimal Abandoned payload)
+ *   + reviews typed as DiditReview[] | null (null not seen but null arrays expected)
+ *   + created_at: ISO string on decision, Unix number on root payload (was ambiguous)
+ *
+ * DiditWebhookPayload (root)
+ *   + resubmit_info block typed here (was only in local muid.ts inline type)
+ *   + decision marked as present on: Approved, Declined, In Review, Abandoned,
+ *     Expired, Kyc Expired  (absent on: Not Started, In Progress, Resubmitted)
+ *   + vendor_data: confirmed absent (undefined, not null) on Not Started /
+ *     In Progress / some Declined payloads — typed as string | null | undefined
+ *
+ * ── END CHANGELOG ────────────────────────────────────────────────────────────
  */
 
 import type {
@@ -34,6 +87,12 @@ import type {
 
 export type UnixTimestamp = number;
 
+/**
+ * All observable session-level statuses from Didit V3 webhooks.
+ *
+ * CHANGES: Added "Kyc Expired" and "Resubmitted" which appear in real payloads.
+ * "Kyc Expired" is distinct from "Expired" — Didit uses both spellings.
+ */
 export type DiditSessionStatus =
   | "Not Started"
   | "In Progress"
@@ -41,23 +100,36 @@ export type DiditSessionStatus =
   | "Approved"
   | "Declined"
   | "Abandoned"
-  | "Expired";
+  | "Expired"
+  | "Kyc Expired" // Added: observed in webhook samples
+  | "Resubmitted"; // Added: observed in webhook samples
 
 export type DiditNodeStatus =
   | "Approved"
   | "Declined"
   | "In Review"
   | "Not Started"
-  | "In Progress";
+  | "In Progress"
+  | "Expired"; // Added: id_verification node can be "Expired" (Kyc Expired payload)
 
 export type DiditWebhookType = "status.updated" | "data.updated";
 
+/**
+ * Per-node warning object.
+ *
+ * CHANGES:
+ *   + feature  — which workflow feature flagged this (e.g. "ID_VERIFICATION")
+ *   + node_id  — internal node ref (e.g. "feature_ocr")
+ * Both were observed in the Declined sample payload.
+ */
 export interface DiditWarning {
-  risk: string;
+  risk: string; // e.g. "DOCUMENT_EXPIRED"
   additional_data: unknown | null;
   log_type: "information" | "warning" | "error";
-  short_description: string;
+  short_description: string; // e.g. "Document expired"
   long_description: string;
+  feature?: string; // Added: e.g. "ID_VERIFICATION"
+  node_id?: string; // Added: e.g. "feature_ocr"
 }
 
 // ─────────────────────────────────────────────
@@ -73,6 +145,14 @@ export interface DiditParsedAddress {
   street_1?: string;
   street_2?: string | null;
   postal_code?: string;
+  country?: string; // Confirmed present in samples (e.g. "US")
+  formatted_address?: string; // Confirmed present in samples
+  is_verified?: boolean; // Confirmed present in samples
+  document_location?: {
+    // Confirmed present in samples
+    latitude: number;
+    longitude: number;
+  };
   raw_results?: Record<string, unknown>;
 }
 
@@ -114,50 +194,59 @@ export interface DiditIDVerificationMatch {
  *   parsed_address                            → PostalAddress
  *   marital_status                            → PrivatePersonalInfo.civil_status
  *   nationality                               → alpha-3, normalize to alpha-2
+ *
+ * CHANGES:
+ *   + extra_fields.first_surname / second_surname — observed in all ID samples
+ *   + matches typed as DiditIDVerificationMatch[] | null (null in Declined sample)
+ *   + front/back_image_camera_front_face_match_score: number | null (null in samples)
+ *   + front/back_image_quality_score: DiditImageQualityScore | null (null in Declined)
+ *   + front/back_image_camera_front: string | null (null in minimal payloads)
  */
 export interface DiditRawIDVerification {
   node_id: string;
   status: DiditNodeStatus;
   document_type: string;
   document_number: string; // SENSITIVE — encrypt at rest
-  personal_number?: string; // SENSITIVE — encrypt at rest
-  portrait_image?: string; // DO NOT store — hash only
-  front_image?: string; // DO NOT store — hash only
-  front_video?: string;
-  back_image?: string; // DO NOT store — hash only
-  back_video?: string;
-  full_front_image?: string;
-  full_back_image?: string;
-  front_image_camera_front?: string;
-  back_image_camera_front?: string;
+  personal_number?: string | null; // SENSITIVE — encrypt at rest
+  portrait_image?: string | null; // DO NOT store — hash only
+  front_image?: string | null; // DO NOT store — hash only
+  front_video?: string | null;
+  back_image?: string | null; // DO NOT store — hash only
+  back_video?: string | null;
+  full_front_image?: string | null;
+  full_back_image?: string | null;
+  front_image_camera_front?: string | null; // null in minimal payloads
+  back_image_camera_front?: string | null; // null in minimal payloads
+  front_image_camera_front_face_match_score?: number | null; // null when camera_front absent
+  back_image_camera_front_face_match_score?: number | null; // null when camera_front absent
+  front_image_quality_score?: DiditImageQualityScore | null; // null in Declined/minimal
+  back_image_quality_score?: DiditImageQualityScore | null; // null in Declined/minimal
   date_of_birth?: string; // "YYYY-MM-DD"
-  age?: number;
-  expiration_date?: string;
-  date_of_issue?: string;
+  age?: number | null;
+  expiration_date?: string | null;
+  date_of_issue?: string | null;
   issuing_state?: string; // ISO 3166-1 alpha-3, e.g. "ESP"
   issuing_state_name?: string;
   first_name?: string;
   last_name?: string;
   full_name?: string;
   gender?: string; // "F" | "M" | "X"
-  address?: string;
-  formatted_address?: string;
-  place_of_birth?: string;
-  marital_status?: string;
+  address?: string | null;
+  formatted_address?: string | null;
+  place_of_birth?: string | null;
+  marital_status?: string; // "UNKNOWN" | "SINGLE" | "MARRIED" etc.
   nationality?: string; // ISO 3166-1 alpha-3, e.g. "ESP"
   extra_fields?: {
+    first_surname?: string; // Added: observed in samples
+    second_surname?: string; // Added: observed in samples
     dl_categories?: string[];
     blood_group?: string | null;
     [key: string]: unknown;
   };
-  parsed_address?: DiditParsedAddress;
-  front_image_camera_front_face_match_score?: number;
-  back_image_camera_front_face_match_score?: number;
-  front_image_quality_score?: DiditImageQualityScore;
-  back_image_quality_score?: DiditImageQualityScore;
+  parsed_address?: DiditParsedAddress | null;
   extra_files?: string[];
   warnings: DiditWarning[];
-  matches?: DiditIDVerificationMatch[];
+  matches?: DiditIDVerificationMatch[] | null; // null in Declined/minimal payloads
 }
 
 // ─────────────────────────────────────────────
@@ -171,16 +260,25 @@ export interface DiditRawIDVerification {
  *   reference_image → SHA3-512 hash → DiditLiveness.selfie_image_hash
  *   video_url       → discard
  *   score           → divide by 100 → 0.00–1.00
+ *
+ * CHANGES:
+ *   + method: added "FLASHING" literal (observed in all samples)
+ *   + face_quality / face_luminance: null in all observed samples — typed as null
+ *   + matches: unknown[] | null  (null in some samples)
+ *   + age_estimation: number | null
+ *   + video_url: string | null (null in all observed samples)
  */
 export interface DiditRawLivenessCheck {
   node_id: string;
   status: DiditNodeStatus;
-  method: string; // e.g. "ACTIVE_3D", "PASSIVE"
+  method: "ACTIVE_3D" | "PASSIVE" | "FLASHING" | string; // Added: "FLASHING"
   score: number; // 0–100
-  reference_image?: string; // DO NOT store — hash only
-  video_url?: string;
-  age_estimation?: number;
-  matches?: unknown[];
+  reference_image?: string | null; // DO NOT store — hash only
+  video_url?: string | null; // null in observed samples
+  age_estimation?: number | null;
+  face_quality?: null; // Always null in observed samples
+  face_luminance?: null; // Always null in observed samples
+  matches?: unknown[] | null;
   warnings: DiditWarning[];
 }
 
@@ -194,13 +292,18 @@ export interface DiditRawLivenessCheck {
  * Storage notes:
  *   score                      → divide by 100 → 0.00–1.00
  *   source_image / target_image → discard URLs
+ *
+ * CHANGES:
+ *   + source_image_session_id: string | null — present in all observed samples,
+ *     was missing from schema entirely
  */
 export interface DiditRawFaceMatch {
   node_id: string;
   status: DiditNodeStatus;
   score: number; // 0–100
-  source_image?: string; // DO NOT store
-  target_image?: string; // DO NOT store
+  source_image?: string | null; // DO NOT store
+  source_image_session_id?: string | null; // Added: present in all samples
+  target_image?: string | null; // DO NOT store
   warnings: DiditWarning[];
 }
 
@@ -230,6 +333,12 @@ export interface DiditPhoneLifecycleEvent {
  *   verification_method → DiditPhoneVerification.otp_method
  *   status "Approved"   → otp_verified = true
  *   lifecycle           → discard (operational detail)
+ *
+ * CHANGES:
+ *   + verification_method: added "whatsapp" literal (observed in samples alongside
+ *     "sms" | "call" — Didit supports WhatsApp OTP)
+ *   + verified_at: ISODateTime | null
+ *   + carrier: DiditPhoneCarrier | null (null possible if carrier lookup fails)
  */
 export interface DiditRawPhoneVerification {
   node_id: string;
@@ -239,12 +348,12 @@ export interface DiditRawPhoneVerification {
   full_number: E164Phone;
   country_code: string;
   country_name: string;
-  carrier?: DiditPhoneCarrier;
+  carrier?: DiditPhoneCarrier | null;
   is_disposable: boolean;
   is_virtual: boolean;
-  verification_method: "sms" | "call";
+  verification_method: "sms" | "call" | "whatsapp" | string; // Added: "whatsapp"
   verification_attempts: number;
-  verified_at?: ISODateTime;
+  verified_at?: ISODateTime | null;
   lifecycle?: DiditPhoneLifecycleEvent[];
   warnings: DiditWarning[];
 }
@@ -253,17 +362,36 @@ export interface DiditRawPhoneVerification {
 // STAGE 5: IP_ANALYSIS
 // ─────────────────────────────────────────────
 
-export interface DiditLocationPoint {
-  location: { latitude: number; longitude: number };
-  distance_from_id_document?: number; // km
-  distance_from_poa_document?: number; // km
-  distance_from_ip?: number; // km
+/**
+ * Per-entity location + distance block used inside DiditRawIPAnalysis.
+ * Each entity (ip, id_document, poa_document) carries its own location
+ * and distances to the other two entities.
+ *
+ * CHANGES: Renamed from DiditLocationPoint / DiditLocationsInfo to match
+ * the actual payload shape observed in samples. The samples nest these
+ * directly as ip / id_document / poa_document on the root node object,
+ * not under a locations_info wrapper key.
+ */
+export interface DiditGeoPoint {
+  location: {
+    latitude: number;
+    longitude: number;
+  };
 }
 
-export interface DiditLocationsInfo {
-  ip?: DiditLocationPoint;
-  id_document?: DiditLocationPoint;
-  poa_document?: DiditLocationPoint;
+export interface DiditIPGeoPoint extends DiditGeoPoint {
+  distance_from_id_document?: { direction: string; distance: number };
+  distance_from_poa_document?: { direction: string; distance: number };
+}
+
+export interface DiditDocumentGeoPoint extends DiditGeoPoint {
+  distance_from_ip?: { direction: string; distance: number };
+  distance_from_poa_document?: { direction: string; distance: number };
+}
+
+export interface DiditPOAGeoPoint extends DiditGeoPoint {
+  distance_from_id_document?: { direction: string; distance: number };
+  distance_from_ip?: { direction: string; distance: number };
 }
 
 /**
@@ -271,32 +399,46 @@ export interface DiditLocationsInfo {
  *
  * Storage notes:
  *   is_vpn_or_tor  → split: is_vpn = is_vpn_or_tor, is_tor = is_vpn_or_tor
- *                    (Didit combines these — store both as same value)
  *   is_data_center → is_hosting_provider
+ *
+ * CHANGES:
+ *   + device_fingerprint: string | null  (null in all observed samples)
+ *   + device_model: string | null        (null in all observed samples)
+ *   + time_zone_offset: number           (samples show integer -8, was typed as string)
+ *   + ip / id_document / poa_document    (typed explicitly; previously was
+ *                                         locations_info?: DiditLocationsInfo which
+ *                                         did not match the real payload shape)
+ *   + Removed locations_info — it doesn't exist as a key in real payloads
+ *   + ip_country_code confirmed required (string, always present in full payloads)
  */
 export interface DiditRawIPAnalysis {
   node_id: string;
   status: DiditNodeStatus;
-  device_brand?: string;
-  device_model?: string;
-  browser_family?: string;
-  os_family?: string;
-  platform?: string;
-  device_fingerprint?: string;
+  device_brand?: string | null;
+  device_model?: string | null; // null in all observed samples
+  browser_family?: string | null;
+  os_family?: string | null;
+  platform?: string | null;
+  device_fingerprint?: string | null; // null in all observed samples
   ip_address: string;
   ip_country: string;
   ip_country_code: string;
-  ip_state?: string;
-  ip_city?: string;
-  latitude?: number;
-  longitude?: number;
+  ip_state?: string | null;
+  ip_city?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   isp?: string | null;
   organization?: string | null;
   is_vpn_or_tor: boolean;
   is_data_center: boolean;
-  time_zone?: string;
-  time_zone_offset?: string;
-  locations_info?: DiditLocationsInfo;
+  time_zone?: string | null;
+  time_zone_offset?: number; // Changed: number (integer), not string
+  /** IP geolocation with distances to document locations */
+  ip?: DiditIPGeoPoint;
+  /** ID document address location with distances */
+  id_document?: DiditDocumentGeoPoint;
+  /** Proof-of-address document location with distances */
+  poa_document?: DiditPOAGeoPoint;
   warnings: DiditWarning[];
 }
 
@@ -328,34 +470,76 @@ export interface DiditAMLRiskView {
 
 export interface DiditAMLHit {
   id: string;
-  url?: string;
+  url?: string | null;
   match: boolean;
   score: number;
-  caption?: string;
+  target?: unknown | null; // present in sample (null)
+  caption?: string | null;
   datasets: string[];
-  risk_view?: DiditAMLRiskView;
-  first_seen?: ISODateTime;
-  last_seen?: ISODateTime;
+  features?: unknown | null; // Added: present in sample (null)
+  rca_name?: string; // Added: present in sample (empty string)
+  risk_view?: DiditAMLRiskView | null;
+  first_seen?: ISODateTime | null;
+  last_seen?: ISODateTime | null;
   match_score?: number;
+  risk_score?: number; // Added: present in sample (73)
+  review_status?: string | null; // Added: e.g. "False Positive"
   pep_matches?: {
     aliases: string[];
     list_name: string;
     publisher: string;
+    source_url?: string; // Added: present in sample
+    description?: string; // Added: present in sample
     matched_name: string;
     pep_position?: string;
     date_of_birth?: string;
     place_of_birth?: string;
+    other_sources?: unknown[]; // Added: present in sample
+    education?: unknown[]; // Added: present in sample
   }[];
   sanction_matches?: unknown[];
   warning_matches?: unknown[];
-  properties?: Record<string, unknown>;
   linked_entities?: unknown[];
+  score_breakdown?: {
+    // Added: full block present in sample
+    name_score: number;
+    name_weight: number;
+    name_weight_normalized: number;
+    name_contribution: number;
+    dob_score: number;
+    dob_weight: number;
+    dob_weight_normalized: number;
+    dob_contribution: number;
+    country_score: number;
+    country_weight: number;
+    country_weight_normalized: number;
+    country_contribution: number;
+    document_number_match_type: string;
+    document_number_effect: string;
+    total_score: number;
+  };
+  properties?: {
+    name?: string[];
+    alias?: string[];
+    notes?: string[];
+    title?: null;
+    gender?: string[];
+    country?: string[];
+    lastName?: string[];
+    position?: string[];
+    birthDate?: string[];
+    firstName?: string[];
+    birthPlace?: string[];
+    nationality?: string[];
+    education?: unknown[];
+    [key: string]: unknown;
+  };
   adverse_media_details?: {
     sentiment: string;
     entity_type: string;
     sentiment_score: number;
     adverse_keywords: Record<string, number>;
-  };
+  } | null;
   adverse_media_matches?: {
     country?: string;
     summary?: string;
@@ -366,7 +550,10 @@ export interface DiditAMLHit {
     sentiment_score?: number;
     publication_date?: ISODateTime;
   }[];
-  additional_information?: Record<string, unknown>;
+  additional_information?: {
+    flag_summary?: unknown[]; // Added: present in sample
+    [key: string]: unknown;
+  } | null;
 }
 
 /**
@@ -378,6 +565,10 @@ export interface DiditAMLHit {
  *   hits[].match = true                 → confirmed match
  *   score                               → DiditAMLScreening.risk_score
  *   Raw hits are NOT stored — only the derived summary fields.
+ *
+ * CHANGES:
+ *   + is_ongoing_monitoring_enabled: boolean  — Added: present in sample
+ *   + next_ongoing_monitoring_bill_date: ISODateTime | null — Added: present in sample
  */
 export interface DiditRawAMLScreening {
   node_id: string;
@@ -386,6 +577,8 @@ export interface DiditRawAMLScreening {
   entity_type: "person" | "organization";
   hits: DiditAMLHit[];
   score: number;
+  is_ongoing_monitoring_enabled?: boolean; // Added: present in sample
+  next_ongoing_monitoring_bill_date?: ISODateTime | null; // Added: present in sample
   screened_data: {
     full_name?: string;
     nationality?: string;
@@ -399,6 +592,28 @@ export interface DiditRawAMLScreening {
 // DECISION OBJECT
 // ─────────────────────────────────────────────
 
+/**
+ * Admin review entry on a decision.
+ */
+export interface DiditReview {
+  user: string;
+  new_status: DiditSessionStatus;
+  comment?: string;
+  created_at: ISODateTime;
+}
+
+/**
+ * Full decision payload attached to terminal/review webhook events.
+ *
+ * CHANGES:
+ *   + All node arrays typed as T[] | null — null is the real payload value when
+ *     a stage is not part of the workflow (e.g. aml_screenings: null in Abandoned)
+ *   + reviews typed as DiditReview[] | null ([] in samples, but null possible)
+ *   + created_at: ISODateTime — this field on the decision object is an ISO string
+ *     (e.g. "2022-01-01T12:00:00Z"), distinct from the root payload's Unix timestamp
+ *   + session_url confirmed present (already was, just reinforced)
+ *   + contact_details: typed structure (was Record<string,unknown> or absent)
+ */
 export interface DiditDecision {
   session_id: string;
   session_number: number;
@@ -406,37 +621,54 @@ export interface DiditDecision {
   status: DiditSessionStatus;
   workflow_id: string;
   features: string[];
-  vendor_data?: string;
-  metadata?: Record<string, unknown>;
+  vendor_data?: string | null;
+  metadata?: Record<string, unknown> | null;
   expected_details?: {
     first_name?: string;
     last_name?: string;
-  };
+  } | null;
   contact_details?: {
     email?: string;
     email_lang?: string;
     send_notification_emails?: boolean;
-  };
-  callback?: string;
+  } | null;
+  callback?: string | null;
 
-  // ── Your 5 workflow stages ───────────────────
-  id_verifications?: DiditRawIDVerification[];
-  liveness_checks?: DiditRawLivenessCheck[];
-  face_matches?: DiditRawFaceMatch[];
-  phone_verifications?: DiditRawPhoneVerification[];
-  ip_analyses?: DiditRawIPAnalysis[];
+  // ── Your 5 workflow stages — null when stage not in workflow ────────────
+  id_verifications?: DiditRawIDVerification[] | null;
+  liveness_checks?: DiditRawLivenessCheck[] | null;
+  face_matches?: DiditRawFaceMatch[] | null;
+  phone_verifications?: DiditRawPhoneVerification[] | null;
+  ip_analyses?: DiditRawIPAnalysis[] | null;
 
-  // ── Supplemental ─────────────────────────────
-  aml_screenings?: DiditRawAMLScreening[];
+  // ── Supplemental — null when not enabled in workflow ────────────────────
+  aml_screenings?: DiditRawAMLScreening[] | null;
 
-  reviews?: {
-    user: string;
-    new_status: DiditSessionStatus;
-    comment?: string;
-    created_at: ISODateTime;
-  }[];
+  // ── Always present — empty array [] when no manual reviews ──────────────
+  reviews?: DiditReview[] | null;
 
+  /**
+   * ISO 8601 string (e.g. "2022-01-01T12:00:00Z").
+   * NOTE: This is different from the root payload's created_at which is a
+   * Unix timestamp (number). Do not confuse the two.
+   */
   created_at: ISODateTime;
+}
+
+// ─────────────────────────────────────────────
+// RESUBMIT INFO
+// ─────────────────────────────────────────────
+
+/**
+ * Present only on Resubmitted payloads.
+ * Tells the client which nodes need to be redone and why.
+ */
+export interface DiditResubmitInfo {
+  nodes_to_resubmit: Array<{
+    feature: string; // e.g. "OCR"
+    node_id: string; // e.g. "feature_ocr"
+  }>;
+  reasons: Record<string, string>; // e.g. { "feature_ocr": "DOCUMENT_EXPIRED" }
 }
 
 // ─────────────────────────────────────────────
@@ -445,19 +677,61 @@ export interface DiditDecision {
 
 /**
  * Full Didit V3 webhook payload.
+ *
  * `vendor_data` should equal MajikID.id — used to look up the record on receipt.
- * `decision` is only present when status ∈ { Approved, Declined, In Review }.
+ *
+ * Decision presence by status:
+ *   WITH decision:    Approved, Declined, In Review, Abandoned, Expired, Kyc Expired
+ *   WITHOUT decision: Not Started, In Progress, Resubmitted
+ *
+ * CHANGES:
+ *   + DiditSessionStatus now includes "Kyc Expired" and "Resubmitted"
+ *   + resubmit_info block added (only present on status = "Resubmitted")
+ *   + vendor_data typed as string | null | undefined — observed absent on some
+ *     Declined payloads (decision.vendor_data was null while root was missing)
+ *   + created_at and timestamp are both Unix timestamps (number) at root level
+ *     (distinct from decision.created_at which is an ISO string)
  */
 export interface DiditWebhookPayload {
   session_id: string;
   status: DiditSessionStatus;
   webhook_type: DiditWebhookType;
-  created_at: UnixTimestamp; // Unix epoch seconds
-  timestamp: UnixTimestamp; // for HMAC verification
+
+  /**
+   * Unix epoch seconds — when the session was created.
+   * NOTE: Use timestamp (not created_at) for HMAC age verification.
+   */
+  created_at: UnixTimestamp;
+
+  /**
+   * Unix epoch seconds — used for HMAC signature freshness check.
+   * Reject if Math.abs(now - timestamp) > 300 (5 minutes).
+   */
+  timestamp: UnixTimestamp;
+
   workflow_id: string;
   workflow_version?: number;
-  vendor_data?: string; // should equal MajikID.id
-  metadata?: Record<string, unknown>;
+
+  /**
+   * Should equal MajikUniversalID.id — set as vendor_data when creating the session.
+   * Absent (undefined) on early lifecycle events (Not Started, In Progress).
+   * null on some Declined payloads at decision level — treat missing as unroutable.
+   */
+  vendor_data?: string | null;
+
+  metadata?: Record<string, unknown> | null;
+
+  /**
+   * Only present on status = "Resubmitted".
+   * Tells the client which nodes must be resubmitted and the reason codes.
+   */
+  resubmit_info?: DiditResubmitInfo;
+
+  /**
+   * Full decision block.
+   * Present on: Approved, Declined, In Review, Abandoned, Expired, Kyc Expired
+   * Absent on:  Not Started, In Progress, Resubmitted
+   */
   decision?: DiditDecision;
 }
 
@@ -466,10 +740,10 @@ export interface DiditWebhookPayload {
 // ─────────────────────────────────────────────
 
 export interface DiditWebhookHeaders {
-  "x-signature-v2"?: string; // recommended
-  "x-signature-simple"?: string; // fallback
-  "x-signature"?: string; // original (raw body)
-  "x-timestamp": string; // Unix timestamp string
+  "x-signature-v2"?: string; // Recommended — HMAC-SHA256 of body
+  "x-signature-simple"?: string; // Fallback
+  "x-signature"?: string; // Original (raw body)
+  "x-timestamp": string; // Unix timestamp string — used for HMAC freshness
 }
 
 // ─────────────────────────────────────────────

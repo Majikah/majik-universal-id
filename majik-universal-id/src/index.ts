@@ -159,7 +159,6 @@ export {
   normalizeGender,
   normalizeDocumentType,
   normalizeToE164,
-  verifyWebhookSignature,
   isVerificationLocked,
   verificationLockDaysRemaining,
   type IDHashKeyMaterial,

@@ -7,7 +7,18 @@
  */
 
 import type { DiditMapperResult } from "./didit/schema";
-import type { IDTier, DiditStage } from "./schema";
+import type {
+  IDTier,
+  DiditStage,
+  Base64,
+  MajikKeyPublicBundle,
+  ISODateTime,
+  MajikIDSignature,
+  MajikIDMetadata,
+  MajikUserRef,
+  MajikIDSettings,
+  SHA3_512Hash,
+} from "./schema";
 
 // ── External package surface (no re-declaration) ──────────────────────────────
 export type { MajikKey } from "@majikah/majik-key";
@@ -124,7 +135,29 @@ export interface UniversalIDValidationResult {
  * Serialized form of MajikUniversalID.
  * Alias of MajikID for clarity at the class boundary.
  */
-export type MajikUniversalIDJSON = import("./schema").MajikID;
+export interface MajikUniversalIDJSON {
+  id: string;
+  user_id: string;
+  account_id: string;
+  /**
+   * Primary X25519 public key, base64 — 32 bytes.
+   * Fingerprint (SHA-256 of this key) = signerId in MajikSignature envelopes.
+   */
+  public_key: Base64;
+  /**
+   * The single MajikKey bundle bound to this identity.
+   * A MajikUniversalID is permanently bound to exactly one MajikKey.
+   * To use a different key, create a new MajikUniversalID.
+   */
+  signing_key: MajikKeyPublicBundle;
+  user_ref: MajikUserRef;
+  metadata: MajikIDMetadata;
+  signature: MajikIDSignature;
+  settings: MajikIDSettings;
+  timestamp: ISODateTime;
+  last_update: ISODateTime;
+  hash: SHA3_512Hash;
+}
 
 // ─────────────────────────────────────────────
 // PRIVATE INFO ENCRYPTION

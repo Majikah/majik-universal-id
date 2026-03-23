@@ -377,7 +377,7 @@ export interface DiditPhoneVerification {
   line_type?: "mobile" | "landline" | "voip" | "unknown";
   country_code: CountryCode;
   otp_verified: boolean;
-  otp_method?: "sms" | "call";
+  otp_method?: "sms" | "call" | "whatsapp" | "string";
   phone_matches_document_country?: boolean;
   failure_reason?: string;
   completed_at?: ISODateTime;
@@ -669,6 +669,14 @@ export type MajikIDPublicView = Pick<
     MajikKeyPublicBundle,
     "fingerprint" | "ed_public_key" | "ml_dsa_public_key" | "registered_at"
   >;
+  /**
+   * Per-stage verification pass/fail map derived from completed_stages.
+   * All five DiditStage keys are always present — false means not yet passed.
+   * This is safe for public consumption: it reveals verification state only,
+   * never the underlying personal data that drove each stage outcome.
+   */
+  verification_stages: Record<DiditStage, boolean>;
+  user_id: string;
 };
 
 export interface MajikIDVerificationSummary {
@@ -706,7 +714,6 @@ export interface MajikUniversalIDData {
   user_ref: MajikUserRef;
   metadata: MajikIDMetadata;
   signature: MajikIDSignature;
-  signature_records: MajikSignatureRecord[];
   settings: MajikIDSettings;
   timestamp: ISODateTime;
   last_update: ISODateTime;
