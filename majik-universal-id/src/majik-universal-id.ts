@@ -870,9 +870,13 @@ export class MajikUniversalID {
     assertDefined(file, "file");
 
     try {
-      const embeddedSig = await MajikSignature.extractFrom(file);
+      // ✅ Verify ONCE — returns array of results
+      const results = await MajikSignature.verifyFile(
+        file,
+        this.#signing_key as any,
+      );
 
-      if (!embeddedSig) {
+      if (!results?.length) {
         return {
           valid: false,
           signer_fingerprint: "",
@@ -881,31 +885,38 @@ export class MajikUniversalID {
         };
       }
 
-      const signerId = embeddedSig.signerId;
+      // 🎯 Find the signature that matches THIS identity
+      const match = results.find(
+        (r) => r.signerId === this.#signing_key.fingerprint,
+      );
 
-      if (signerId !== this.#signing_key.fingerprint) {
+      if (!match) {
         return {
           valid: false,
-          signer_fingerprint: signerId,
+          signer_fingerprint: "",
           signer_registered: false,
-          reason: `Signer fingerprint '${signerId}' does not match the key bound to this MajikID`,
+          reason: "No signature found matching the key bound to this MajikID",
         };
       }
 
-      const result = await MajikSignature.verifyFile(
-        file,
-        this.#signing_key as any,
-      );
+      if (!match.signerId?.trim()) {
+        return {
+          valid: false,
+          signer_fingerprint: "",
+          signer_registered: false,
+          reason: "Invalid Signer Fingerprint",
+        };
+      }
 
       return {
-        valid: result.valid,
-        signer_fingerprint: signerId,
+        valid: match.valid,
+        signer_fingerprint: match.signerId,
         signer_registered: true,
-        content_hash: result.contentHash,
-        signed_at: result.timestamp,
-        content_type: result.contentType,
-        handler: result.handler,
-        reason: result.valid ? undefined : (result as any).reason,
+        content_hash: match.contentHash,
+        signed_at: match.timestamp,
+        content_type: match.contentType,
+        handler: match.handler,
+        reason: match.valid ? undefined : (match as any).reason,
       };
     } catch (err) {
       if (err instanceof MajikUniversalIDError) throw err;
@@ -915,7 +926,7 @@ export class MajikUniversalID {
       );
     }
   }
-
+  
   /** Convenience wrapper for verifying signed text strings. */
   verifyText(
     text: string,
