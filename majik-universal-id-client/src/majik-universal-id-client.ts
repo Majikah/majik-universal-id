@@ -1374,12 +1374,11 @@ export class MajikUniversalIdClient {
       mimeType?: string;
     },
   ): Promise<VerificationResult & { handler?: string; reason?: string }> {
-    console.log("Verifying File");
     try {
       const publicKeys = await this._resolveSignerPublicKeys(options);
 
       if (publicKeys) {
-        return MajikSignature.verifyFile(
+        const results = await MajikSignature.verifyFile(
           file,
           publicKeys,
           {
@@ -1388,13 +1387,15 @@ export class MajikUniversalIdClient {
           },
           true,
         );
+        return results[0];
       }
 
-      // No signer provided — extract and use self-reported keys
+      // No signer provided — extract and use self-reported keys from first signature.
+      // For full multi-sig verification, pass a contactId or publicKeyBase64.
       const extracted = await MajikSignature.extractFrom(file, {
         mimeType: options?.mimeType,
       });
-      if (!extracted) {
+      if (!extracted.length) {
         return {
           valid: false,
           signerId: "",
@@ -1404,15 +1405,17 @@ export class MajikUniversalIdClient {
         };
       }
 
-      return MajikSignature.verifyFile(
+      const firstSig = extracted[0];
+      const results = await MajikSignature.verifyFile(
         file,
-        extracted.extractPublicKeys(),
+        firstSig.extractPublicKeys(),
         {
-          expectedSignerId: options?.expectedSignerId,
+          expectedSignerId: firstSig.signerId,
           mimeType: options?.mimeType,
         },
         true,
       );
+      return results[0];
     } catch (err) {
       this._emit("error", err, { context: "verifyFile" });
       throw err;
@@ -1446,8 +1449,8 @@ export class MajikUniversalIdClient {
   ): Promise<
     Array<
       VerificationResult & {
-        handler: string | null;
-        mimeType: string | null;
+        handler: string | undefined; // aligned with VerificationResult.handler
+        mimeType: string | undefined;
         error: Error | null;
       }
     >
@@ -1473,52 +1476,55 @@ export class MajikUniversalIdClient {
               };
 
         try {
-          let result: VerificationResult & { handler?: string };
+          let result: VerificationResult;
 
           if (publicKeys) {
-            result = await MajikSignature.verifyFile(file, publicKeys, {
+            const results = await MajikSignature.verifyFile(file, publicKeys, {
               mimeType,
               expectedSignerId,
             });
+            result = results[0];
           } else {
-            // No signer hint — use self-reported keys from each file's envelope
             const extracted = await MajikSignature.extractFrom(file, {
               mimeType,
             });
-            if (!extracted) {
+            if (!extracted.length) {
               return {
                 valid: false,
-                signerId: "",
-                contentHash: "",
+                signerId: undefined,
+                contentHash: undefined,
                 timestamp: new Date().toISOString(),
                 reason: "No embedded signature found",
-                handler: null,
-                mimeType: mimeType ?? null,
+                handler: undefined,
+                mimeType,
                 error: null,
               };
             }
-            result = await MajikSignature.verifyFile(
+
+            const firstSig = extracted[0];
+            const results = await MajikSignature.verifyFile(
               file,
-              extracted.extractPublicKeys(),
-              { mimeType, expectedSignerId },
+              firstSig.extractPublicKeys(),
+              { mimeType, expectedSignerId: firstSig.signerId },
             );
+            result = results[0];
           }
 
           return {
             ...result,
-            handler: result.handler ?? null,
-            mimeType: mimeType ?? null,
+            handler: result.handler,
+            mimeType,
             error: null,
           };
         } catch (err) {
           this._emit("error", err, { context: "batchVerifyFiles" });
           return {
             valid: false,
-            signerId: "",
-            contentHash: "",
+            signerId: undefined,
+            contentHash: undefined,
             timestamp: new Date().toISOString(),
-            handler: null,
-            mimeType: mimeType ?? null,
+            handler: undefined,
+            mimeType,
             error: err instanceof Error ? err : new Error(String(err)),
           };
         }
@@ -1530,7 +1536,7 @@ export class MajikUniversalIdClient {
 
   /**
    * Extract the embedded MajikSignature from a file.
-   * Returns a fully typed MajikSignature instance, or null if not found.
+   * Returns an array of typed MajikSignature instance, or empty if not found.
    *
    * Does not verify — use verifyFile() to verify.
    *
@@ -1541,7 +1547,7 @@ export class MajikUniversalIdClient {
   async extractSignature(
     file: Blob,
     options?: { mimeType?: string },
-  ): Promise<MajikSignature | null> {
+  ): Promise<MajikSignature[] | null> {
     try {
       return MajikSignature.extractFrom(file, options);
     } catch (err) {
@@ -1675,7 +1681,7 @@ export class MajikUniversalIdClient {
   async getFileSignatureInfo(
     file: Blob,
     options?: { mimeType?: string },
-  ): Promise<MajikSignature | null> {
+  ): Promise<MajikSignature[] | null> {
     try {
       return MajikSignature.extractFrom(file, options);
     } catch (err) {
