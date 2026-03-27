@@ -52,6 +52,7 @@ import {
   MajikUniversalID,
 } from "@majikah/majik-universal-id";
 import { MajikUser } from "@thezelijah/majik-user";
+import { MajikSLink } from "@majikah/majik-slink";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1686,6 +1687,64 @@ export class MajikUniversalIdClient {
       return MajikSignature.extractFrom(file, options);
     } catch (err) {
       this._emit("error", err, { context: "getFileSignatureInfo" });
+      throw err;
+    }
+  }
+
+  // ── Majik SLink ───────────────────────────
+
+  async signURL(
+    url: string,
+    muid: string,
+    verified: boolean = false,
+  ): Promise<MajikSLink> {
+    const id = this.getActiveAccount()?.id;
+    if (!id)
+      throw new Error("No active account — call setActiveAccount() first");
+
+    if (!this.user)
+      throw new Error("Login required - A valid Majikah account is required");
+
+    try {
+      await MajikKeyStore.ensureUnlocked(id);
+      const key = MajikKeyStore.get(id);
+      if (!key) throw new Error(`Account not found in keystore: "${id}"`);
+      if (!key.hasSigningKeys) {
+        throw new Error(
+          `Account "${id}" has no signing keys. ` +
+            `Re-import via importAccountFromMnemonicBackup() to enable signing.`,
+        );
+      }
+
+      return await MajikSLink.create(url, key, this.user.id, muid, {
+        status: verified ? "verified" : undefined,
+      });
+    } catch (err) {
+      this._emit("error", err, { context: "signURL" });
+      throw err;
+    }
+  }
+
+  async verifySLink(
+    slink: MajikSLink,
+  ): Promise<VerificationResult & { handler?: string; reason?: string }> {
+    try {
+      const id = this.getActiveAccount()?.id;
+      if (!id)
+        throw new Error("No active account — call setActiveAccount() first");
+
+      await MajikKeyStore.ensureUnlocked(id);
+      const key = MajikKeyStore.get(id);
+      if (!key) throw new Error(`Account not found in keystore: "${id}"`);
+
+      const publicKeys = await this._resolveSignerPublicKeys({
+        key: key,
+      });
+
+      const results = slink.verify(publicKeys ?? undefined);
+      return results;
+    } catch (err) {
+      this._emit("error", err, { context: "verifySLink" });
       throw err;
     }
   }
