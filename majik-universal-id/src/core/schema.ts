@@ -624,6 +624,7 @@ export interface MajikIDSettings {
 export interface MajikID {
   id: string;
   user_id: string;
+  username: string | null;
   account_id: string;
   /**
    * Primary X25519 public key, base64 — 32 bytes.
@@ -677,6 +678,7 @@ export type MajikIDPublicView = Pick<
    */
   verification_stages: Record<DiditStage, boolean>;
   user_id: string;
+  username: string | null;
 };
 
 export interface MajikIDVerificationSummary {
@@ -692,6 +694,7 @@ export interface MajikIDVerificationSummary {
   aml_clear: boolean;
   ip_risk_level?: IPRiskLevel;
   user_verification: UserVerificationBridge;
+  username: string | null;
 }
 
 export interface ResolvedSignerPublicKeys {
@@ -708,6 +711,7 @@ export interface ResolvedSignerPublicKeys {
 export interface MajikUniversalIDData {
   id: string;
   user_id: string;
+  username: string | null;
   account_id: string;
   public_key: Base64;
   signing_key: MajikKeyPublicBundle;

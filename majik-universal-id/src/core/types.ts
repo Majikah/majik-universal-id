@@ -49,6 +49,8 @@ export interface CreateUniversalIDOptions {
   locale?: string;
   /** Schema version override. Defaults to SCHEMA_VERSION constant. */
   schema_version?: string;
+
+  username?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -157,6 +159,7 @@ export interface MajikUniversalIDJSON {
   timestamp: ISODateTime;
   last_update: ISODateTime;
   hash: SHA3_512Hash;
+  username: string | null;
 }
 
 // ─────────────────────────────────────────────

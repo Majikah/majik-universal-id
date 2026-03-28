@@ -141,6 +141,9 @@ export class MajikUniversalID {
 
   readonly #id: string;
   readonly #user_id: string;
+
+  readonly #username: string | null;
+
   readonly #account_id: string;
   readonly #timestamp: ISODateTime;
   readonly #hash: SHA3_512Hash;
@@ -158,6 +161,7 @@ export class MajikUniversalID {
   private constructor(data: MajikUniversalIDData) {
     this.#id = data.id;
     this.#user_id = data.user_id;
+    this.#username = data.username;
     this.#account_id = data.account_id;
     this.#public_key = data.public_key;
     this.#signing_key = { ...data.signing_key };
@@ -266,6 +270,7 @@ export class MajikUniversalID {
         phone_verified: this.#user_ref.phone_verified,
         identity_verified: this.#user_ref.identity_verified,
       },
+      username: this.#username,
     };
   }
 
@@ -448,6 +453,7 @@ export class MajikUniversalID {
     return new MajikUniversalID({
       id,
       user_id: user.id,
+      username: options?.username || null,
       account_id: options.account_id,
       public_key: key.publicKeyBase64,
       signing_key: keyBundle,
@@ -476,6 +482,7 @@ export class MajikUniversalID {
     return {
       id: this.#id,
       user_id: this.#user_id,
+      username: this.#username,
       account_id: this.#account_id,
       public_key: this.#public_key,
       signing_key: { ...this.#signing_key },
@@ -926,7 +933,7 @@ export class MajikUniversalID {
       );
     }
   }
-  
+
   /** Convenience wrapper for verifying signed text strings. */
   verifyText(
     text: string,
@@ -1217,6 +1224,7 @@ export class MajikUniversalID {
         this.#metadata.didit.completed_stages,
       ),
       user_id: this.#user_id,
+      username: this.#username,
     };
   }
 
