@@ -6,7 +6,7 @@ import {
   MajikContact,
   MajikContactData,
   SerializedMajikContact,
-} from "./majik-contact";
+} from "@majikah/majik-contact";
 
 /* -------------------------------
  * Types

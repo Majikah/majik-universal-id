@@ -10,7 +10,7 @@ import {
   MajikContactCard,
   type MajikContactMeta,
   type SerializedMajikContact,
-} from "./core/contacts/majik-contact";
+} from "@majikah/majik-contact";
 
 import { MajikSignature } from "@majikah/majik-signature";
 import type {

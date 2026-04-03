@@ -48,7 +48,6 @@ import {
   IDTier,
   DiditStage,
   SignatureAlgorithm,
-  SignatureVerificationOutcome,
   NotificationChannel,
   VisibilityScope,
 } from "./core/schema";
@@ -142,7 +141,7 @@ export class MajikUniversalID {
   readonly #id: string;
   readonly #user_id: string;
 
-  readonly #username: string | null;
+  #username: string | null;
 
   readonly #account_id: string;
   readonly #timestamp: ISODateTime;
@@ -184,6 +183,15 @@ export class MajikUniversalID {
   get userId(): string {
     return this.#user_id;
   }
+
+  get username(): string | null {
+    return this.#username;
+  }
+
+  set username(value: string | null) {
+    this.#username = value;
+  }
+
   get accountId(): string {
     return this.#account_id;
   }
@@ -272,6 +280,11 @@ export class MajikUniversalID {
       },
       username: this.#username,
     };
+  }
+
+  clearUsername(): this {
+    this.#username = null;
+    return this;
   }
 
   // ═══════════════════════════════════════════
