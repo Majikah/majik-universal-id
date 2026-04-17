@@ -2,7 +2,7 @@
   "name": "@majikah/majik-universal-id-client",
   "type": "module",
   "description": "The core universal identity model for the Majikah ecosystem, featuring hybrid PQC signatures (Ed25519 + ML-DSA), ML-KEM-768 private info encryption, and multi-stage Didit verification graduation.",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",
@@ -39,17 +39,17 @@
     "url": "https://github.com/Majikah/majik-universal-id-client/issues"
   },
   "scripts": {
-    "update": "npm install @majikah/majik-key@latest @majikah/majik-universal-id@latest ",
+    "update": "npm install @majikah/majik-key@latest @majikah/majik-universal-id@latest @majikah/majik-signature@latest @majikah/majik-contact@latest",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@majikah/majik-contact": "^0.0.1",
-    "@majikah/majik-key": "^0.2.4",
-    "@majikah/majik-signature": "^0.0.15",
+    "@majikah/majik-contact": "^0.0.3",
+    "@majikah/majik-key": "^0.2.6",
+    "@majikah/majik-signature": "^0.0.17",
     "@majikah/majik-slink": "^0.0.2",
-    "@majikah/majik-universal-id": "^0.0.10",
+    "@majikah/majik-universal-id": "^0.0.11",
     "idb": "^8.0.3"
   },
   "devDependencies": {
