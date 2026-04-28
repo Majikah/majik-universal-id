@@ -39,7 +39,7 @@ import type {
   SignOptions,
 } from "@majikah/majik-signature";
 import type { MajikKey } from "@majikah/majik-key";
-import type { MajikUser } from "@thezelijah/majik-user";
+import { base64ToUint8Array, type MajikUser } from "@thezelijah/majik-user";
 import { MajikEnvelope } from "@majikah/majik-envelope";
 import type { MajikRecipient, MajikIdentity } from "@majikah/majik-envelope";
 
@@ -198,6 +198,11 @@ export class MajikUniversalID {
   get publicKey(): Base64 {
     return this.#public_key;
   }
+
+  get mlKey(): Base64 {
+    return this.#signing_key.ml_kem_public_key;
+  }
+
   get hash(): SHA3_512Hash {
     return this.#hash;
   }
@@ -1210,6 +1215,25 @@ export class MajikUniversalID {
 
   getActiveConsents(): ConsentEntry[] {
     return (this.#metadata.consent_log ?? []).filter((c) => c.is_active);
+  }
+
+  buildMajikRecipient(): MajikRecipient {
+    if (!this?.signingKey?.ml_kem_public_key?.trim())
+      throw new MajikUniversalIDKeyNotFoundError(
+        `A contact is required to build a MajikRecipient`,
+      );
+
+    const mlPubKey = base64ToUint8Array(this.signingKey.ml_kem_public_key);
+
+    if (!mlPubKey) {
+      throw new MajikUniversalIDKeyNotFoundError(
+        `Recipient key "${this.signingKey.fingerprint}" has no ML-KEM public key. `,
+      );
+    }
+    return {
+      fingerprint: this.signingKey.fingerprint,
+      mlKemPublicKey: mlPubKey,
+    };
   }
 
   // ═══════════════════════════════════════════
