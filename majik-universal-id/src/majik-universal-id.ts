@@ -37,6 +37,7 @@ import type {
   MajikSignatureJSON,
   VerificationResult,
   SignOptions,
+  ExpectedSigner,
 } from "@majikah/majik-signature";
 import type { MajikKey } from "@majikah/majik-key";
 import { base64ToUint8Array, type MajikUser } from "@thezelijah/majik-user";
@@ -1233,6 +1234,22 @@ export class MajikUniversalID {
     return {
       fingerprint: this.signingKey.fingerprint,
       mlKemPublicKey: mlPubKey,
+    };
+  }
+
+  buildExpectedSigner(): ExpectedSigner {
+    if (
+      !this.signingKey?.ed_public_key?.trim() ||
+      !this.signingKey?.ml_dsa_public_key?.trim() ||
+      !this.signingKey?.fingerprint?.trim()
+    ) {
+      throw new Error(`Invalid Keys. Cannot export to Expected Signer.`);
+    }
+
+    return {
+      edPublicKey: this.signingKey.ed_public_key,
+      mlDsaPublicKey: this.signingKey.ml_dsa_public_key,
+      signerId: this.signingKey.fingerprint,
     };
   }
 

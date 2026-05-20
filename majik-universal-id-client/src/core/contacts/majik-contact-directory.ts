@@ -1,33 +1,13 @@
 import { KEY_ALGO } from "../crypto/constants";
 import { MAJIK_API_RESPONSE } from "../types";
-
 import { base64ToArrayBuffer } from "../utils/utilities";
 import {
   MajikContact,
   MajikContactData,
   SerializedMajikContact,
 } from "@majikah/majik-contact";
-
-/* -------------------------------
- * Types
- * ------------------------------- */
-
-export interface MajikContactDirectoryData {
-  contacts: SerializedMajikContact[];
-}
-
-/* -------------------------------
- * Errors
- * ------------------------------- */
-
-export class MajikContactDirectoryError extends Error {
-  cause?: unknown;
-  constructor(message: string, cause?: unknown) {
-    super(message);
-    this.name = "MajikContactDirectoryError";
-    this.cause = cause;
-  }
-}
+import { MajikContactDirectoryError } from "./errors";
+import { MajikContactDirectoryData } from "./types";
 
 /* -------------------------------
  * MajikContactDirectory Class
@@ -48,6 +28,15 @@ export class MajikContactDirectory {
    * ================================ */
 
   addContact(contact: MajikContact): this {
+    if (
+      !contact?.id ||
+      !contact?.publicKey ||
+      !contact?.fingerprint ||
+      !contact?.mlKey
+    ) {
+      throw new MajikContactDirectoryError("Invalid contact");
+    }
+
     if (!(contact instanceof MajikContact)) {
       throw new MajikContactDirectoryError("Invalid contact instance");
     }
@@ -180,6 +169,20 @@ export class MajikContactDirectory {
     return this.contacts.has(id);
   }
 
+  /**
+   * Checks if a contact exists by their public key (base64)
+   */
+  async hasContactByPublicKeyBase64(publicKeyBase64: string): Promise<boolean> {
+    if (!publicKeyBase64 || typeof publicKeyBase64 !== "string") {
+      throw new MajikContactDirectoryError(
+        "Public key must be a non-empty base64 string",
+      );
+    }
+
+    const contact = await this.getContactByPublicKeyBase64(publicKeyBase64);
+    return contact !== undefined;
+  }
+
   clear(): this {
     this.contacts.clear();
     this.fingerprintMap.clear();
@@ -248,6 +251,8 @@ export class MajikContactDirectory {
         item.mlKey,
         item.fingerprint,
         item.meta,
+        item.edPublicKeyBase64,
+        item.mlDsaPublicKeyBase64,
       );
       this.contacts.set(contact.id, contact);
       this.fingerprintMap.set(contact.fingerprint, contact.id);
