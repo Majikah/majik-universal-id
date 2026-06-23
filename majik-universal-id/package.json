@@ -39,19 +39,23 @@
     "url": "https://github.com/Majikah/majik-universal-id/issues"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "prepublishOnly": "npm run build"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "package": "npm run build && npm version patch && git push && git push --tags",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@majikah/majik-envelope": "^0.0.4",
-    "@majikah/majik-key": "^0.2.7",
-    "@majikah/majik-signature": "^0.0.17",
+    "@majikah/majik-envelope": "^0.0.5",
+    "@majikah/majik-key": "^0.2.9",
+    "@majikah/majik-signature": "^0.0.25",
     "@noble/hashes": "^2.2.0",
     "@thezelijah/majik-user": "^1.0.6",
-    "axios": "^1.16.1"
+    "axios": "^1.18.1"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0"
+    "@types/node": "^26.0.0",
+    "vitest": "^4.1.9"
   }
 }

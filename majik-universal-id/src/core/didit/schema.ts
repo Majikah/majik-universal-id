@@ -675,6 +675,11 @@ export interface DiditResubmitInfo {
 // ROOT WEBHOOK PAYLOAD
 // ─────────────────────────────────────────────
 
+export type DiditWebhookTrigger =
+  | "manual_review"
+  | "manual_step_update"
+  | "ongoing_monitoring";
+
 /**
  * Full Didit V3 webhook payload.
  *
@@ -733,6 +738,9 @@ export interface DiditWebhookPayload {
    * Absent on:  Not Started, In Progress, Resubmitted
    */
   decision?: DiditDecision;
+
+  // In DiditWebhookPayload:
+  trigger?: DiditWebhookTrigger;
 }
 
 // ─────────────────────────────────────────────
