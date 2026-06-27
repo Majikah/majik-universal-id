@@ -346,8 +346,8 @@ export class MajikKeyManager {
 
   // ── Mnemonic / backup helpers ─────────────────────────────────────────────
 
-  static generateMnemonic(strength: 128 | 256 = 128): string {
-    return MajikKey.generateMnemonic(strength);
+  static async generateMnemonic(strength: 128 | 256 = 128): Promise<string> {
+    return await MajikKey.generateMnemonic(strength);
   }
 
   async exportMnemonicBackup(id: string, mnemonic: string): Promise<string> {

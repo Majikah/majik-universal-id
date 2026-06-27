@@ -390,8 +390,8 @@ export class MajikUniversalIdClient {
   // ── ACCOUNT MANAGEMENT ────────────────────────────────────────────────────
   // ==========================================================================
 
-  generateMnemonic(strength: 128 | 256 = 128): string {
-    return MajikKeyManager.generateMnemonic(strength);
+  async generateMnemonic(strength: 128 | 256 = 128): Promise<string> {
+    return await MajikKeyManager.generateMnemonic(strength);
   }
 
   async createAccount(
