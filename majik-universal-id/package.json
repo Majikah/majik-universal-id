@@ -47,15 +47,34 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@majikah/majik-envelope": "^0.0.6",
-    "@majikah/majik-key": "^0.2.11",
-    "@majikah/majik-signature": "^0.0.28",
-    "@noble/hashes": "^2.2.0",
-    "@thezelijah/majik-user": "^1.0.6",
-    "axios": "^1.18.1"
+    "@noble/hashes": "^2.2.0"
   },
   "devDependencies": {
+    "@majikah/majik-envelope": "^0.0.6",
+    "@majikah/majik-key": "^0.2.12",
+    "@majikah/majik-signature": "^0.0.30",
+    "@thezelijah/majik-user": "^1.0.9",
     "@types/node": "^26.0.0",
     "vitest": "^4.1.9"
+  },
+  "peerDependencies": {
+    "@majikah/majik-envelope": "^0.0.6",
+    "@majikah/majik-key": "^0.2.12",
+    "@majikah/majik-signature": "^0.0.30",
+    "@thezelijah/majik-user": "^1.0.9"
+  },
+  "peerDependenciesMeta": {
+    "@majikah/majik-key": {
+      "optional": false
+    },
+    "@thezelijah/majik-user": {
+      "optional": false
+    },
+    "@majikah/majik-signature": {
+      "optional": false
+    },
+    "@majikah/majik-envelope": {
+      "optional": false
+    }
   }
 }
