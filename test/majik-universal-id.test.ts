@@ -10,7 +10,7 @@ import {
   IDStatus,
   DiditStage,
   VisibilityScope,
-} from "../src/core/schema";
+} from "../src/core/enums";
 
 import {
   MajikUniversalIDValidationError,

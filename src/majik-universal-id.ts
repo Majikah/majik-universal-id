@@ -51,7 +51,7 @@ import {
   SignatureAlgorithm,
   NotificationChannel,
   VisibilityScope,
-} from "./core/schema";
+} from "./core/enums";
 
 import type {
   MajikIDMetadata,

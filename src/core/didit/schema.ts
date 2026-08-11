@@ -65,14 +65,13 @@
  * ── END CHANGELOG ────────────────────────────────────────────────────────────
  */
 
+import { DiditStage } from "../enums";
 import type {
   ISODateTime,
   CountryCode,
   E164Phone,
   SHA3_512Hash,
   DiditVerification,
-  DiditStage,
-  DiditStageStatus,
   DiditIDVerification,
   DiditLiveness,
   DiditFaceMatch,

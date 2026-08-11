@@ -1,105 +1,11 @@
 // ── Errors ──────────────────────────────────────────────────────────────────
-export {
-  MajikUniversalIDError,
-  MajikUniversalIDValidationError,
-  MajikUniversalIDDeserializationError,
-  MajikUniversalIDKeyError,
-  MajikUniversalIDKeyNotFoundError,
-  MajikUniversalIDSigningError,
-  MajikUniversalIDVerificationError,
-  MajikUniversalIDWebhookSignatureError,
-  MajikUniversalIDWebhookPayloadError,
-  MajikUniversalIDRestrictedError,
-  MajikUniversalIDTierRequiredError,
-  MajikUniversalIDIntegrityError,
-  MajikUniversalIDImmutableError,
-  MajikUniversalIDVerificationLockedError,
-  MajikUniversalIDPrivateInfoLockedError,
-  MajikUniversalIDPrivateInfoEncryptionError,
-  MajikUniversalIDRotationCooldownError,        // NEW
-  MajikUniversalIDRotationCapExceededError,      // NEW
-  MajikUniversalIDKeyGenerationMismatchError,    // NEW
-  MajikUniversalIDPrivateInfoNotYetAvailableError, // NEW
-  isUniversalIDError,
-  isValidationError,
-  isWebhookError,
-  isImmutableError,
-  isLockedError,
-  isPrivateInfoLockedError,
-  isRotationCooldownError, // NEW
-} from "./core/errors";
+export * from "./core/errors";
 
 // ── Schema enums ──────────────────────────────────────────────────────────────
-export {
-  IDStatus,
-  IDTier, // unchanged export, now includes PENDING_REVERIFICATION member
-  Gender,
-  DocumentType,
-  DeviceType,
-  BiometricStatus,
-  VerificationProvider,
-  SignatureAlgorithm,
-  VisibilityScope,
-  NotificationChannel,
-  ThemePreference,
-  LanguageCode,
-  SocialPlatform,
-  DiditStage,
-  DiditStageStatus,
-  IPRiskLevel,
-  SignatureVerificationOutcome,
-} from "./core/schema";
+export type * from "./core/schema";
 
 // ── Schema types ──────────────────────────────────────────────────────────────
-export type {
-  MajikID,
-  MajikIDMetadata,
-  MajikIDSignature,
-  MajikIDSettings,
-  MajikIDPublicView,
-  MajikIDVerificationSummary,
-  MajikKeyPublicBundle,
-  MajikSignatureRecord,
-  MajikSignatureEnvelope,
-  MajikUserRef,
-  PublicProfile,
-  PrivatePersonalInfo,
-  PrivateInfoField,
-  EncryptedPrivateInfo,
-  PostalAddress,
-  DiditVerification,
-  DiditIDVerification,
-  DiditLiveness,
-  DiditFaceMatch,
-  DiditPhoneVerification,
-  DiditIPAnalysis,
-  DiditAMLScreening,
-  DiditSessionLog,
-  GeoLocation,
-  GeoCoordinates,
-  DeviceFingerprint,
-  ConsentEntry,
-  UserVerificationBridge,
-  ResolvedSignerPublicKeys,
-  MajikUniversalIDData,
-  KeyGenerationRecord,       // NEW
-  RotationReason,            // NEW
-  RotationAuthorizedVia,     // NEW
-  KeyGenerationStatus,       // NEW
-  SignatureTrustLevel,       // NEW
-  // Primitives
-  ISODateTime,
-  SHA3_512Hash,
-  SHA256Base64,
-  Base64,
-  Base64URL,
-  E164Phone,
-  CountryCode,
-  LanguageTag,
-  YYYYMMDD,
-  SemVer,
-  URLString,
-} from "./core/schema";
+export type * from "./core/schema";
 
 // ── Didit webhook types ─────────────────────────────────────────────────────
 // (unchanged)

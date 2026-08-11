@@ -45,7 +45,7 @@ import {
   DiditStageStatus,
   DocumentType,
   Gender,
-} from "./schema";
+} from "./enums";
 
 import type {
   MajikID,

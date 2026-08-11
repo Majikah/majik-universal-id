@@ -9,163 +9,24 @@
  * v1.3.0 — Moved into src/core/schema.ts; added MajikUniversalIDData
  */
 
-// ─────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────
-
-export enum IDStatus {
-  ACTIVE = "active",
-  SUSPENDED = "suspended",
-  REVOKED = "revoked",
-  PENDING_VERIFICATION = "pending_verification",
-  EXPIRED = "expired",
-}
-
-export enum IDTier {
-  UNVERIFIED = "unverified", // No didit verification yet
-  PENDING_REVERIFICATION = "pending_reverification", // for rotation
-  BASIC = "basic", // Phone verified only (Stage 4 only)
-  VERIFIED = "verified", // Stage 1 (ID verification) passed
-  ENHANCED = "enhanced", // Stages 1–3 passed (ID + liveness + face match)
-  TRUSTED = "trusted", // All 5 stages passed
-}
-
-/**
- * Gender options.
- * Values match UserGenderOptions from @thezelijah/majik-user:
- *   Male | Female | Other
- * Extra values (NON_BINARY, PREFER_NOT_TO_SAY) are MajikID-only — from Didit docs.
- */
-export enum Gender {
-  MALE = "Male",
-  FEMALE = "Female",
-  NON_BINARY = "Non-Binary",
-  PREFER_NOT_TO_SAY = "Prefer not to say",
-  OTHER = "Other",
-}
-
-export enum DocumentType {
-  PASSPORT = "passport",
-  NATIONAL_ID = "national_id",
-  DRIVERS_LICENSE = "drivers_license",
-  RESIDENCE_PERMIT = "residence_permit",
-  VOTER_ID = "voter_id",
-  BIRTH_CERTIFICATE = "birth_certificate",
-  OTHER = "other",
-}
-
-export enum DeviceType {
-  MOBILE = "mobile",
-  TABLET = "tablet",
-  DESKTOP = "desktop",
-  UNKNOWN = "unknown",
-}
-
-export enum BiometricStatus {
-  NOT_SUBMITTED = "not_submitted",
-  PENDING = "pending",
-  PASSED = "passed",
-  FAILED = "failed",
-  REQUIRES_REVIEW = "requires_review",
-}
-
-export enum VerificationProvider {
-  DIDIT = "didit",
-  MANUAL = "manual",
-  THIRD_PARTY = "third_party",
-}
-
-export enum SignatureAlgorithm {
-  ED25519 = "Ed25519",
-  ML_DSA_87 = "ML-DSA-87",
-  /** Both required — classical + post-quantum */
-  HYBRID_ED25519_ML_DSA_87 = "Ed25519+ML-DSA-87",
-}
-
-export enum VisibilityScope {
-  PUBLIC = "public",
-  PRIVATE = "private",
-  INTERNAL = "internal",
-}
-
-export enum NotificationChannel {
-  EMAIL = "email",
-  SMS = "sms",
-  PUSH = "push",
-  WEBHOOK = "webhook",
-}
-
-export enum ThemePreference {
-  LIGHT = "light",
-  DARK = "dark",
-  SYSTEM = "system",
-}
-
-export enum LanguageCode {
-  EN = "en",
-  FIL = "fil",
-  ES = "es",
-  FR = "fr",
-  ZH = "zh",
-  JA = "ja",
-  AR = "ar",
-}
-
-/**
- * Social platform keys.
- * Values match SocialLinkType from @thezelijah/majik-user.
- */
-export enum SocialPlatform {
-  FACEBOOK = "Facebook",
-  X = "X",
-  TIKTOK = "Tik-Tok",
-  THREADS = "Threads",
-  INSTAGRAM = "Instagram",
-  YOUTUBE = "Youtube",
-  SPOTIFY = "Spotify",
-  APPLE_MUSIC = "Apple Music",
-  LINKEDIN = "LinkedIn",
-  GITHUB = "GitHub",
-  WEBSITE = "Website URL",
-}
-
-// ── Didit-specific enums ──────────────────────────────────────────────────────
-
-/** The 5 stages of the Didit verification workflow, in execution order */
-export enum DiditStage {
-  ID_VERIFICATION = "id_verification", // Stage 1
-  LIVENESS = "liveness", // Stage 2
-  FACE_MATCH = "face_match", // Stage 3
-  PHONE_VERIFICATION = "phone_verification", // Stage 4
-  IP_ANALYSIS = "ip_analysis", // Stage 5
-}
-
-export enum DiditStageStatus {
-  NOT_STARTED = "not_started",
-  IN_PROGRESS = "in_progress",
-  PASSED = "passed",
-  FAILED = "failed",
-  SKIPPED = "skipped",
-  REQUIRES_REVIEW = "requires_review",
-}
-
-export enum IPRiskLevel {
-  LOW = "low",
-  MEDIUM = "medium",
-  HIGH = "high",
-  CRITICAL = "critical",
-}
-
-export enum SignatureVerificationOutcome {
-  VALID = "valid",
-  INVALID_CONTENT_HASH = "invalid_content_hash",
-  INVALID_ED25519 = "invalid_ed25519",
-  INVALID_ML_DSA = "invalid_ml_dsa",
-  INVALID_STRUCTURE = "invalid_structure",
-  KEY_MISMATCH = "key_mismatch",
-  EXPIRED = "expired",
-  ERROR = "error",
-}
+import {
+  DeviceType,
+  DiditStageStatus,
+  SignatureVerificationOutcome,
+  VerificationProvider,
+  DiditStage,
+  BiometricStatus,
+  IPRiskLevel,
+  IDTier,
+  IDStatus,
+  LanguageCode,
+  ThemePreference,
+  SocialPlatform,
+  Gender,
+  SignatureAlgorithm,
+  NotificationChannel,
+  VisibilityScope,
+} from "./enums";
 
 // ─────────────────────────────────────────────
 // PRIMITIVE / SHARED TYPES
@@ -327,9 +188,9 @@ export interface DiditSessionLog {
 }
 
 export interface DiditIDVerification {
-  stage: DiditStage.ID_VERIFICATION;
+  stage: "id_verification";
   status: DiditStageStatus;
-  document_type: DocumentType;
+  document_type: DocumentType | string;
   document_number: string; // encrypted at rest
   issuing_country: CountryCode;
   issuing_authority?: string;
@@ -347,7 +208,7 @@ export interface DiditIDVerification {
 }
 
 export interface DiditLiveness {
-  stage: DiditStage.LIVENESS;
+  stage: "liveness";
   status: DiditStageStatus;
   liveness_check_passed: boolean;
   liveness_score?: number;
@@ -361,7 +222,7 @@ export interface DiditLiveness {
 }
 
 export interface DiditFaceMatch {
-  stage: DiditStage.FACE_MATCH;
+  stage: "face_match";
   status: DiditStageStatus;
   face_match_passed: boolean;
   face_match_score?: number;
@@ -371,7 +232,7 @@ export interface DiditFaceMatch {
 }
 
 export interface DiditPhoneVerification {
-  stage: DiditStage.PHONE_VERIFICATION;
+  stage: "phone_verification";
   status: DiditStageStatus;
   phone_number: E164Phone;
   carrier?: string;
@@ -385,7 +246,7 @@ export interface DiditPhoneVerification {
 }
 
 export interface DiditIPAnalysis {
-  stage: DiditStage.IP_ANALYSIS;
+  stage: "ip_analysis";
   status: DiditStageStatus;
   ip_address: string;
   ip_version: 4 | 6;
@@ -573,7 +434,7 @@ export interface MajikIDMetadata {
 // ─────────────────────────────────────────────
 
 export interface MajikIDSignature {
-  algorithm: SignatureAlgorithm.HYBRID_ED25519_ML_DSA_87;
+  algorithm: SignatureAlgorithm;
   signer_fingerprint: string;
   signer_ed_public_key: Base64;
   signer_ml_dsa_public_key: Base64;

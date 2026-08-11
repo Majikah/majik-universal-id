@@ -7,9 +7,8 @@
  */
 
 import type { DiditMapperResult } from "./didit/schema";
+import { DiditStage, IDTier, SignatureVerificationOutcome } from "./enums";
 import type {
-  IDTier,
-  DiditStage,
   Base64,
   MajikKeyPublicBundle,
   ISODateTime,
@@ -115,7 +114,7 @@ export interface SignatureAuditEntry {
   verification_id: string;
   signature_record_id: string;
   verified_with_fingerprint: string;
-  outcome: import("./schema").SignatureVerificationOutcome;
+  outcome: SignatureVerificationOutcome;
   both_algorithms_passed: boolean;
   ed25519_passed: boolean;
   ml_dsa_passed: boolean;

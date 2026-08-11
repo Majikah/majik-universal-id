@@ -97,7 +97,7 @@ import {
   IPRiskLevel,
   VerificationProvider,
   DeviceType,
-} from "../schema";
+} from "../enums";
 
 import type {
   DiditVerification,
@@ -124,6 +124,7 @@ import {
   now,
   uuidv7,
 } from "../utils";
+import { DiditStageStatus } from "../enums";
 
 // ─────────────────────────────────────────────
 // TERMINAL STATUS SET
@@ -569,7 +570,7 @@ export class DiditWebhookMapperImpl implements DiditWebhookMapperInterface {
     // since null?.[0] === undefined, which is falsy. Made explicit for clarity.
     const check = (
       items: { status: DiditNodeStatus }[] | null | undefined,
-      prevStatus: import("../schema").DiditStageStatus | undefined,
+      prevStatus: DiditStageStatus | undefined,
       stage: DiditStage,
     ) => {
       const first = items?.[0];
