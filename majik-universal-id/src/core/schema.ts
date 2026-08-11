@@ -23,6 +23,7 @@ export enum IDStatus {
 
 export enum IDTier {
   UNVERIFIED = "unverified", // No didit verification yet
+  PENDING_REVERIFICATION = "pending_reverification", // for rotation
   BASIC = "basic", // Phone verified only (Stage 4 only)
   VERIFIED = "verified", // Stage 1 (ID verification) passed
   ENHANCED = "enhanced", // Stages 1–3 passed (ID + liveness + face match)
@@ -519,10 +520,15 @@ export interface PrivatePersonalInfo {
 export interface EncryptedPrivateInfo {
   readonly encrypted: true;
   /**
-   * Serialized MajikEnvelopeJSON.
-   * Decrypt with the bound MajikKey's ML-KEM secret key.
+   * Serialized MajikEnvelopeJSON. Decrypt with the bound MajikKey's ML-KEM
+   * secret key.
+   *
+   * Absent only when metadata.didit.tier === IDTier.PENDING_REVERIFICATION —
+   * i.e. immediately after rotateKey(), before the next Didit session
+   * completes and rebuilds private info under the new key. Every other
+   * tier value requires this to be present; see _validateJSON().
    */
-  envelope: import("@majikah/majik-envelope").MajikEnvelopeJSON;
+  envelope?: import("@majikah/majik-envelope").MajikEnvelopeJSON;
   /**
    * In-memory only — populated after decryptPrivate().
    * Stripped from toJSON() output — never persisted.
@@ -723,3 +729,29 @@ export interface MajikUniversalIDData {
   last_update: ISODateTime;
   hash: SHA3_512Hash;
 }
+
+export type RotationReason = "voluntary" | "compromised";
+export type RotationAuthorizedVia = "old_key_signature" | "step_up_auth";
+export type KeyGenerationStatus = "active" | "rotated" | "revoked_compromised";
+
+export interface KeyGenerationRecord {
+  id: string;
+  muid_id: string;
+  fingerprint: string;
+  bundle_hash: SHA3_512Hash;
+  kdf_version: 1 | 2;
+  status: KeyGenerationStatus;
+  activated_at: ISODateTime;
+  deactivated_at?: ISODateTime;
+  reason?: RotationReason;
+  authorized_via?: RotationAuthorizedVia;
+  rotation_certificate?: unknown; // MajikSignatureJSON — typed loosely here to avoid a schema.ts → majik-signature dependency
+}
+
+export type SignatureTrustLevel =
+  | "active_at_signing" // verified against current signing_key — fast path
+  | "historically_valid" // verified against a past generation, inside its valid window
+  | "signed_after_rotation" // signed_at falls after deactivated_at — tamper/reuse signal
+  | "signed_before_activation" // signed_at falls before activated_at — clock skew or backdating
+  | "key_mismatch" // embedded keys don't match the ledger's bundle_hash for this fingerprint
+  | "unknown_signer"; // fingerprint never bound to this identity

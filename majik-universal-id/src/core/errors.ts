@@ -150,6 +150,20 @@ export class MajikUniversalIDPrivateInfoEncryptionError extends MajikUniversalID
   }
 }
 
+// core/errors.ts
+export class MajikUniversalIDPrivateInfoNotYetAvailableError extends MajikUniversalIDError {
+  constructor() {
+    super(
+      "Private info has not been established yet — this identity is pending " +
+        "reverification after a key rotation. Complete a new Didit session to " +
+        "rebuild and encrypt private info under the new key.",
+      undefined,
+      "PRIVATE_INFO_NOT_YET_AVAILABLE",
+    );
+    this.name = "MajikUniversalIDPrivateInfoNotYetAvailableError";
+  }
+}
+
 // ─────────────────────────────────────────────
 // IDENTITY STATE
 // ─────────────────────────────────────────────
@@ -241,6 +255,63 @@ export class MajikUniversalIDVerificationLockedError extends MajikUniversalIDErr
     this.verified_at = verified_at;
     this.days_remaining = days_remaining;
   }
+}
+
+export class MajikUniversalIDRotationCooldownError extends MajikUniversalIDError {
+  readonly next_eligible_at: string;
+  readonly days_remaining: number;
+
+  constructor(next_eligible_at: string, days_remaining: number) {
+    super(
+      `Voluntary key rotation is on cooldown — next eligible on ${next_eligible_at} ` +
+        `(${days_remaining} day${days_remaining === 1 ? "" : "s"} remaining). ` +
+        `Compromise rotations bypass this cooldown.`,
+      undefined,
+      "ROTATION_COOLDOWN",
+    );
+    this.name = "MajikUniversalIDRotationCooldownError";
+    this.next_eligible_at = next_eligible_at;
+    this.days_remaining = days_remaining;
+  }
+}
+
+export class MajikUniversalIDRotationCapExceededError extends MajikUniversalIDError {
+  readonly count: number;
+  readonly window_days: number;
+
+  constructor(count: number, window_days: number) {
+    super(
+      `Compromise-flagged rotations (${count}) have exceeded the allowed cap ` +
+        `within the last ${window_days} days. Manual review is required — contact support.`,
+      undefined,
+      "ROTATION_CAP_EXCEEDED",
+    );
+    this.name = "MajikUniversalIDRotationCapExceededError";
+    this.count = count;
+    this.window_days = window_days;
+  }
+}
+
+export class MajikUniversalIDKeyGenerationMismatchError extends MajikUniversalIDError {
+  readonly fingerprint: string;
+
+  constructor(fingerprint: string) {
+    super(
+      `Signature embeds key material for fingerprint '${fingerprint}' that does not ` +
+        `match this identity's registered binding for that generation. This may indicate ` +
+        `a forged or substituted key.`,
+      undefined,
+      "KEY_GENERATION_MISMATCH",
+    );
+    this.name = "MajikUniversalIDKeyGenerationMismatchError";
+    this.fingerprint = fingerprint;
+  }
+}
+
+export function isRotationCooldownError(
+  e: unknown,
+): e is MajikUniversalIDRotationCooldownError {
+  return e instanceof MajikUniversalIDRotationCooldownError;
 }
 
 // ─────────────────────────────────────────────

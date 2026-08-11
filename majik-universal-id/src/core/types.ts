@@ -18,6 +18,7 @@ import type {
   MajikUserRef,
   MajikIDSettings,
   SHA3_512Hash,
+  SignatureTrustLevel,
 } from "./schema";
 
 // ── External package surface (no re-declaration) ──────────────────────────────
@@ -66,6 +67,7 @@ export interface ContentVerificationResult {
   signed_at?: string;
   content_type?: string;
   reason?: string;
+  trust_level?: SignatureTrustLevel;
 }
 
 export interface FileVerificationResult extends ContentVerificationResult {

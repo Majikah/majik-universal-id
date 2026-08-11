@@ -73,6 +73,9 @@ import type {
   CountryCode,
   YYYYMMDD,
   MajikUniversalIDData,
+  KeyGenerationRecord,
+  RotationAuthorizedVia,
+  RotationReason,
 } from "./core/schema";
 
 import type {
@@ -111,6 +114,7 @@ import {
   MajikUniversalIDVerificationLockedError,
   MajikUniversalIDPrivateInfoLockedError,
   MajikUniversalIDPrivateInfoEncryptionError,
+  MajikUniversalIDPrivateInfoNotYetAvailableError,
 } from "./core/errors";
 
 import {
@@ -130,6 +134,10 @@ import {
   assertHasSigningKeys,
   isVerificationLocked,
   verificationLockDaysRemaining,
+  computeBundleHash,
+  bundleToSigningKeyMaterial,
+  signatureToSigningKeyMaterial,
+  base64ToBytes,
 } from "./core/utils";
 
 // ─────────────────────────────────────────────
@@ -149,7 +157,10 @@ export class MajikUniversalID {
   readonly #hash: SHA3_512Hash;
 
   #public_key: Base64;
-  readonly #signing_key: MajikKeyPublicBundle;
+  // AFTER — rotation is the one sanctioned mutation path; every other write
+  // site continues to treat this as effectively immutable, but the type no
+  // longer lies about that.
+  #signing_key: MajikKeyPublicBundle;
   #user_ref: MajikUserRef;
   #metadata: MajikIDMetadata;
   #signature: MajikIDSignature;
@@ -840,6 +851,7 @@ export class MajikUniversalID {
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON | string,
     context?: string,
+    keyHistory?: KeyGenerationRecord[],
   ): ContentVerificationResult {
     assertDefined(content, "content");
     assertDefined(signature, "signature");
@@ -853,17 +865,101 @@ export class MajikUniversalID {
             : MajikSignature.fromJSON(signature as MajikSignatureJSON);
 
       const signerId = sig.signerId;
+      const sigJson = sig.toJSON();
 
-      if (signerId !== this.#signing_key.fingerprint) {
+      // ── Fast path: current active key ──────────────────────────────────
+      if (signerId === this.#signing_key.fingerprint) {
+        const publicKeys = bundleToSignerKeys(this.#signing_key);
+        const result: VerificationResult = MajikSignature.verify(
+          content,
+          sig,
+          publicKeys,
+        );
+        return {
+          valid: result.valid,
+          signer_fingerprint: signerId,
+          signer_registered: true,
+          content_hash: result.contentHash,
+          signed_at: result.timestamp,
+          content_type: result.contentType,
+          trust_level: result.valid ? "active_at_signing" : undefined,
+          reason: result.valid ? undefined : (result as any).reason,
+        };
+      }
+
+      // ── Historical path: look up the generation ledger ─────────────────
+      if (!keyHistory?.length) {
         return {
           valid: false,
           signer_fingerprint: signerId,
           signer_registered: false,
-          reason: `Signer fingerprint '${signerId}' does not match the key bound to this MajikID`,
+          trust_level: "unknown_signer",
+          reason:
+            `Signer fingerprint '${signerId}' does not match the current bound key, ` +
+            `and no key history was provided to check past generations.`,
         };
       }
 
-      const publicKeys = bundleToSignerKeys(this.#signing_key);
+      const generation = keyHistory.find((g) => g.fingerprint === signerId);
+      if (!generation) {
+        return {
+          valid: false,
+          signer_fingerprint: signerId,
+          signer_registered: false,
+          trust_level: "unknown_signer",
+          reason: `Signer fingerprint '${signerId}' was never bound to this identity.`,
+        };
+      }
+
+      // ── Hash-commitment check — confirms embedded keys match what we issued ──
+      const recomputedHash = computeBundleHash(
+        signatureToSigningKeyMaterial(sigJson),
+      );
+      if (recomputedHash !== generation.bundle_hash) {
+        return {
+          valid: false,
+          signer_fingerprint: signerId,
+          signer_registered: true,
+          trust_level: "key_mismatch",
+          reason:
+            `Key material embedded in this signature does not match this identity's ` +
+            `registered binding for fingerprint '${signerId}'. This may indicate a forged ` +
+            `or substituted key.`,
+        };
+      }
+
+      // ── Time-window check — was this key authoritative when signed? ────
+      const signedAt = new Date(sigJson.timestamp).getTime();
+      const activatedAt = new Date(generation.activated_at).getTime();
+      const deactivatedAt = generation.deactivated_at
+        ? new Date(generation.deactivated_at).getTime()
+        : Infinity;
+
+      if (signedAt < activatedAt) {
+        return {
+          valid: false,
+          signer_fingerprint: signerId,
+          signer_registered: true,
+          trust_level: "signed_before_activation",
+          reason: `Signature timestamp predates this key's activation on ${generation.activated_at} — possible clock skew or backdating.`,
+        };
+      }
+      if (signedAt >= deactivatedAt) {
+        return {
+          valid: false,
+          signer_fingerprint: signerId,
+          signer_registered: true,
+          trust_level: "signed_after_rotation",
+          reason: `This key was rotated out on ${generation.deactivated_at}, but this signature claims to be signed after that date. Treat as tampered or a reused/compromised key.`,
+        };
+      }
+
+      // ── Passed hash + window checks — run the actual crypto verify ─────
+      const publicKeys = {
+        signerId,
+        edPublicKey: base64ToBytes(sigJson.signerEdPublicKey),
+        mlDsaPublicKey: base64ToBytes(sigJson.signerMlDsaPublicKey),
+      };
       const result: VerificationResult = MajikSignature.verify(
         content,
         sig,
@@ -877,6 +973,7 @@ export class MajikUniversalID {
         content_hash: result.contentHash,
         signed_at: result.timestamp,
         content_type: result.contentType,
+        trust_level: result.valid ? "historically_valid" : undefined,
         reason: result.valid ? undefined : (result as any).reason,
       };
     } catch (err) {
@@ -888,21 +985,26 @@ export class MajikUniversalID {
     }
   }
 
-  /** Verify a file's embedded MajikSignature against this identity. */
+  /**
+   * Verify a file's embedded MajikSignature against this identity — checks
+   * both the current bound key and, if a generation ledger is supplied, any
+   * historical key this identity has ever rotated through.
+   *
+   * @param keyHistory - Optional generation ledger (see verifyContent). Without
+   *   it, only the current bound key is checked — a signature made with a
+   *   since-rotated key reports signer_registered: false, not an error.
+   */
   async verifyFile(
     file: Blob,
     context?: string,
+    keyHistory?: KeyGenerationRecord[],
   ): Promise<FileVerificationResult> {
     assertDefined(file, "file");
 
     try {
-      // ✅ Verify ONCE — returns array of results
-      const results = await MajikSignature.verifyFile(
-        file,
-        this.#signing_key as any,
-      );
+      const signatures = await MajikSignature.extractFrom(file);
 
-      if (!results?.length) {
+      if (!signatures.length) {
         return {
           valid: false,
           signer_fingerprint: "",
@@ -911,38 +1013,127 @@ export class MajikUniversalID {
         };
       }
 
-      // 🎯 Find the signature that matches THIS identity
-      const match = results.find(
-        (r) => r.signerId === this.#signing_key.fingerprint,
+      // ── Fast path: current active key ───────────────────────────────────
+      const currentMatch = signatures.find(
+        (s) => s.signerId === this.#signing_key.fingerprint,
       );
 
-      if (!match) {
+      if (currentMatch) {
+        const publicKeys = bundleToSignerKeys(this.#signing_key);
+        const results = await MajikSignature.verifyFile(file, publicKeys, {
+          expectedSignerId: this.#signing_key.fingerprint,
+        });
+        const result = results[0];
         return {
-          valid: false,
-          signer_fingerprint: "",
-          signer_registered: false,
-          reason: "No signature found matching the key bound to this MajikID",
+          valid: result.valid,
+          signer_fingerprint: result.signerId ?? this.#signing_key.fingerprint,
+          signer_registered: true,
+          content_hash: result.contentHash,
+          signed_at: result.timestamp,
+          content_type: result.contentType,
+          handler: result.handler,
+          trust_level: result.valid ? "active_at_signing" : undefined,
+          reason: result.valid ? undefined : result.reason,
         };
       }
 
-      if (!match.signerId?.trim()) {
+      // ── Historical path ──────────────────────────────────────────────────
+      if (!keyHistory?.length) {
         return {
           valid: false,
-          signer_fingerprint: "",
+          signer_fingerprint: signatures[0].signerId,
           signer_registered: false,
-          reason: "Invalid Signer Fingerprint",
+          trust_level: "unknown_signer",
+          reason:
+            "No signature found matching the current bound key, and no key " +
+            "history was provided to check past generations.",
         };
       }
+
+      const historicalMatch = signatures.find((s) =>
+        keyHistory.some((g) => g.fingerprint === s.signerId),
+      );
+
+      if (!historicalMatch) {
+        return {
+          valid: false,
+          signer_fingerprint: signatures[0].signerId,
+          signer_registered: false,
+          trust_level: "unknown_signer",
+          reason:
+            "No signature found matching any key ever bound to this MajikID.",
+        };
+      }
+
+      const sigJson = historicalMatch.toJSON();
+      const generation = keyHistory.find(
+        (g) => g.fingerprint === historicalMatch.signerId,
+      )!;
+
+      // ── Hash-commitment check ─────────────────────────────────────────────
+      const recomputedHash = computeBundleHash(
+        signatureToSigningKeyMaterial(sigJson),
+      );
+      if (recomputedHash !== generation.bundle_hash) {
+        return {
+          valid: false,
+          signer_fingerprint: historicalMatch.signerId,
+          signer_registered: true,
+          trust_level: "key_mismatch",
+          reason:
+            `Key material embedded in this signature does not match this identity's ` +
+            `registered binding for fingerprint '${historicalMatch.signerId}'. This may ` +
+            `indicate a forged or substituted key.`,
+        };
+      }
+
+      // ── Time-window check ─────────────────────────────────────────────────
+      const signedAt = new Date(sigJson.timestamp).getTime();
+      const activatedAt = new Date(generation.activated_at).getTime();
+      const deactivatedAt = generation.deactivated_at
+        ? new Date(generation.deactivated_at).getTime()
+        : Infinity;
+
+      if (signedAt < activatedAt) {
+        return {
+          valid: false,
+          signer_fingerprint: historicalMatch.signerId,
+          signer_registered: true,
+          trust_level: "signed_before_activation",
+          reason: `Signature timestamp predates this key's activation on ${generation.activated_at} — possible clock skew or backdating.`,
+        };
+      }
+      if (signedAt >= deactivatedAt) {
+        return {
+          valid: false,
+          signer_fingerprint: historicalMatch.signerId,
+          signer_registered: true,
+          trust_level: "signed_after_rotation",
+          reason: `This key was rotated out on ${generation.deactivated_at}, but this signature claims to be signed after that date. Treat as tampered or a reused/compromised key.`,
+        };
+      }
+
+      // ── Passed hash + window checks — run the actual crypto verify ────────
+      const publicKeys = {
+        signerId: historicalMatch.signerId,
+        edPublicKey: base64ToBytes(sigJson.signerEdPublicKey),
+        mlDsaPublicKey: base64ToBytes(sigJson.signerMlDsaPublicKey),
+      };
+      const results = await MajikSignature.verifyFile(file, publicKeys, {
+        expectedSignerId: historicalMatch.signerId,
+      });
+      const result = results[0];
 
       return {
-        valid: match.valid,
-        signer_fingerprint: match.signerId,
+        valid: result.valid,
+        signer_fingerprint: historicalMatch.signerId,
         signer_registered: true,
-        content_hash: match.contentHash,
-        signed_at: match.timestamp,
-        content_type: match.contentType,
-        handler: match.handler,
-        reason: match.valid ? undefined : (match as any).reason,
+        content_hash: result.contentHash,
+        signed_at: result.timestamp,
+        content_type: result.contentType,
+        handler: result.handler,
+        trust_level: result.valid ? "historically_valid" : undefined,
+        reason: result.valid ? undefined : result.reason,
       };
     } catch (err) {
       if (err instanceof MajikUniversalIDError) throw err;
@@ -958,8 +1149,9 @@ export class MajikUniversalID {
     text: string,
     signature: MajikSignatureJSON | string,
     context?: string,
+    keyHistory?: KeyGenerationRecord[],
   ): ContentVerificationResult {
-    return this.verifyContent(text, signature, context);
+    return this.verifyContent(text, signature, context, keyHistory);
   }
 
   // ═══════════════════════════════════════════
@@ -1095,6 +1287,113 @@ export class MajikUniversalID {
     };
     this._touch();
     return this;
+  }
+
+  /**
+   * Rotate this identity's bound MajikKey.
+   *
+   * Always forces re-verification — tier drops to PENDING_REVERIFICATION and
+   * re_verification_required is set. Private info's envelope is cleared
+   * (not re-encrypted) — since every rotation forces full Didit reverification
+   * anyway, there is no need to decrypt/re-encrypt the old envelope, and an
+   * unrecoverable old key is never a blocker for private-info continuity.
+   *
+   * Cooldown/cap enforcement is NOT done here — this is a pure domain state
+   * transition. The server layer checks the generation ledger against
+   * cooldown/cap policy BEFORE calling this method.
+   *
+   * @param newKey - Unlocked MajikKey with signing keys — the new bound key.
+   * @param options.reason - "voluntary" | "compromised"
+   * @param options.oldKey - Optionally the outgoing key, if still available and
+   *   unlocked, to co-sign a rotation certificate as evidence of authorized
+   *   handoff. Omit when the old key is lost/stolen — authorization then
+   *   falls to step-up auth at the server layer.
+   */
+  async rotateKey(
+    newKey: MajikKey,
+    options: { reason: RotationReason; oldKey?: MajikKey },
+  ): Promise<{
+    newGeneration: Omit<KeyGenerationRecord, "id" | "muid_id">;
+    rotationCertificate?: MajikSignatureJSON;
+  }> {
+    this._assertNotRestricted();
+    assertDefined(newKey, "newKey");
+    assertDefined(options?.reason, "options.reason");
+
+    if (newKey.isLocked) {
+      throw new MajikUniversalIDKeyError(
+        "New MajikKey must be unlocked to rotate. Call key.unlock(passphrase) first.",
+      );
+    }
+    assertHasSigningKeys(newKey);
+
+    if (newKey.fingerprint === this.#signing_key.fingerprint) {
+      throw new MajikUniversalIDValidationError(
+        "New key is identical to the current bound key — nothing to rotate.",
+        "newKey",
+      );
+    }
+
+    const timestamp = now();
+    let rotationCertificate: MajikSignatureJSON | undefined;
+    let authorizedVia: RotationAuthorizedVia = "step_up_auth";
+
+    if (options.oldKey && !options.oldKey.isLocked) {
+      if (options.oldKey.fingerprint !== this.#signing_key.fingerprint) {
+        throw new MajikUniversalIDKeyNotFoundError(options.oldKey.fingerprint);
+      }
+      const certPayload = JSON.stringify({
+        new_fingerprint: newKey.fingerprint,
+        timestamp,
+      });
+      const certSig = await MajikSignature.sign(certPayload, options.oldKey, {
+        contentType: "application/majik-rotation-certificate",
+        timestamp,
+      });
+      rotationCertificate = certSig.toJSON();
+      authorizedVia = "old_key_signature";
+    }
+
+    const newKeyBundle = MajikUniversalID._buildKeyBundle(newKey, timestamp);
+    const bundleHash = computeBundleHash(
+      bundleToSigningKeyMaterial(newKeyBundle),
+    );
+
+    this.#signing_key = newKeyBundle;
+    this.#public_key = newKey.publicKeyBase64;
+
+    this.#metadata = {
+      ...this.#metadata,
+      private: { encrypted: true as const, envelope: undefined },
+      didit: {
+        ...MajikUniversalID._buildEmptyDidit(IDTier.PENDING_REVERIFICATION),
+        re_verification_required: true,
+        rejection_reason: undefined,
+      },
+    };
+
+    this.#user_ref = {
+      ...this.#user_ref,
+      identity_verified: false,
+      phone_verified: false,
+      last_synced_at: timestamp,
+    };
+
+    this._touch();
+
+    return {
+      newGeneration: {
+        fingerprint: newKey.fingerprint,
+        bundle_hash: bundleHash,
+        kdf_version: (newKey.kdfVersion ?? 1) as 1 | 2,
+        status: "active",
+        activated_at: timestamp,
+        reason: options.reason,
+        authorized_via: authorizedVia,
+        rotation_certificate: rotationCertificate,
+      },
+      rotationCertificate,
+    };
   }
 
   // ═══════════════════════════════════════════
@@ -1320,11 +1619,17 @@ export class MajikUniversalID {
       }
     }
 
-    if (!this.#metadata.private?.envelope) {
+    const envelopeRequired = this.tier !== IDTier.PENDING_REVERIFICATION;
+
+    if (envelopeRequired && !this.#metadata.private?.envelope) {
       errors.push("private info is missing encryption envelope");
+    } else if (!envelopeRequired && this.#metadata.private?.envelope) {
+      warnings.push(
+        "private info envelope is present but tier is PENDING_REVERIFICATION — unexpected state",
+      );
     }
 
-    if (!this.isPrivateDecrypted) {
+    if (envelopeRequired && !this.isPrivateDecrypted) {
       warnings.push(
         "private info is encrypted and not yet decrypted in this session — " +
           "call decryptPrivate(key) to access it",
@@ -1434,9 +1739,18 @@ export class MajikUniversalID {
   /**
    * Core envelope decryption — decrypt and parse the stored PrivatePersonalInfo.
    * Throws on any failure. Callers decide how to handle errors.
+   *
+   * @throws MajikUniversalIDPrivateInfoNotYetAvailableError if no envelope is present —
+   *         i.e. tier is PENDING_REVERIFICATION and private info hasn't been
+   *         rebuilt yet after a key rotation.
    */
   private async _decryptEnvelope(key: MajikKey): Promise<PrivatePersonalInfo> {
-    const envelope = MajikEnvelope.fromJSON(this.#metadata.private.envelope);
+    const envelopeJSON = this.#metadata.private.envelope;
+    if (!envelopeJSON) {
+      throw new MajikUniversalIDPrivateInfoNotYetAvailableError();
+    }
+
+    const envelope = MajikEnvelope.fromJSON(envelopeJSON);
     const identity: MajikIdentity = {
       fingerprint: key.fingerprint,
       mlKemSecretKey: key.mlKemSecretKey!,
@@ -1648,11 +1962,13 @@ export class MajikUniversalID {
     }
   }
 
-  private static _buildEmptyDidit(): DiditVerification {
+  private static _buildEmptyDidit(
+    tier: IDTier = IDTier.UNVERIFIED,
+  ): DiditVerification {
     return {
       verification_id: uuidv7(),
       didit_reference_id: "",
-      tier: IDTier.UNVERIFIED,
+      tier: tier,
       status: IDStatus.PENDING_VERIFICATION,
       session: {
         session_id: "",
@@ -1789,14 +2105,32 @@ export class MajikUniversalID {
       );
     }
     const priv = meta["private"] as Record<string, unknown>;
+    if (priv["encrypted"] !== true) {
+      throw new MajikUniversalIDDeserializationError(
+        "metadata.private must be an EncryptedPrivateInfo. " +
+          "Plaintext private info is never stored or accepted on load.",
+      );
+    }
+
+    const diditTier = (meta["didit"] as Record<string, unknown> | undefined)?.[
+      "tier"
+    ];
+    const envelopeRequired = diditTier !== IDTier.PENDING_REVERIFICATION;
+
     if (
-      priv["encrypted"] !== true ||
-      typeof priv["envelope"] !== "object" ||
-      !priv["envelope"]
+      envelopeRequired &&
+      (typeof priv["envelope"] !== "object" || !priv["envelope"])
     ) {
       throw new MajikUniversalIDDeserializationError(
-        "metadata.private must be an EncryptedPrivateInfo with an envelope. " +
-          "Plaintext private info is never stored or accepted on load.",
+        "metadata.private.envelope is missing. It is required for every tier " +
+          "except PENDING_REVERIFICATION (immediately after a key rotation, " +
+          "before reverification rebuilds it).",
+      );
+    }
+    if (!envelopeRequired && priv["envelope"] !== undefined) {
+      throw new MajikUniversalIDDeserializationError(
+        "metadata.private.envelope must be absent while tier is " +
+          "PENDING_REVERIFICATION — private info has not been rebuilt yet.",
       );
     }
     if (!d["signature"] || typeof d["signature"] !== "object") {

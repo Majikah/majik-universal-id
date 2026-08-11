@@ -1,17 +1,4 @@
-/**
- * src/index.ts
- *
- * Public API for @majikah/majik-universal-id
- *
- * Usage:
- *   import { MajikUniversalID } from "@majikah/majik-universal-id";
- *   import type { DiditWebhookPayload } from "@majikah/majik-universal-id";
- */
-
-// ── Main class ────────────────────────────────────────────────────────────────
-export { MajikUniversalID } from "./majik-universal-id";
-
-// ── Errors ────────────────────────────────────────────────────────────────────
+// ── Errors ──────────────────────────────────────────────────────────────────
 export {
   MajikUniversalIDError,
   MajikUniversalIDValidationError,
@@ -29,18 +16,23 @@ export {
   MajikUniversalIDVerificationLockedError,
   MajikUniversalIDPrivateInfoLockedError,
   MajikUniversalIDPrivateInfoEncryptionError,
+  MajikUniversalIDRotationCooldownError,        // NEW
+  MajikUniversalIDRotationCapExceededError,      // NEW
+  MajikUniversalIDKeyGenerationMismatchError,    // NEW
+  MajikUniversalIDPrivateInfoNotYetAvailableError, // NEW
   isUniversalIDError,
   isValidationError,
   isWebhookError,
   isImmutableError,
   isLockedError,
   isPrivateInfoLockedError,
+  isRotationCooldownError, // NEW
 } from "./core/errors";
 
 // ── Schema enums ──────────────────────────────────────────────────────────────
 export {
   IDStatus,
-  IDTier,
+  IDTier, // unchanged export, now includes PENDING_REVERIFICATION member
   Gender,
   DocumentType,
   DeviceType,
@@ -90,6 +82,11 @@ export type {
   UserVerificationBridge,
   ResolvedSignerPublicKeys,
   MajikUniversalIDData,
+  KeyGenerationRecord,       // NEW
+  RotationReason,            // NEW
+  RotationAuthorizedVia,     // NEW
+  KeyGenerationStatus,       // NEW
+  SignatureTrustLevel,       // NEW
   // Primitives
   ISODateTime,
   SHA3_512Hash,
@@ -104,31 +101,13 @@ export type {
   URLString,
 } from "./core/schema";
 
-// ── Didit webhook types ───────────────────────────────────────────────────────
-export type {
-  DiditWebhookPayload,
-  DiditWebhookHeaders,
-  DiditDecision,
-  DiditRawIDVerification,
-  DiditRawLivenessCheck,
-  DiditRawFaceMatch,
-  DiditRawPhoneVerification,
-  DiditRawIPAnalysis,
-  DiditRawAMLScreening,
-  DiditWarning,
-  DiditSessionStatus,
-  DiditNodeStatus,
-  DiditWebhookType,
-  DiditMapperContext,
-  DiditMapperResult,
-  DiditWebhookMapperInterface,
-  UnixTimestamp,
-} from "./core/didit/schema";
+// ── Didit webhook types ─────────────────────────────────────────────────────
+// (unchanged)
 
-// ── Class-layer types ─────────────────────────────────────────────────────────
+// ── Class-layer types ────────────────────────────────────────────────────────
 export type {
   CreateUniversalIDOptions,
-  ContentVerificationResult,
+  ContentVerificationResult, // now includes trust_level?: SignatureTrustLevel
   FileVerificationResult,
   WebhookProcessResult,
   UserSyncAction,
@@ -140,7 +119,7 @@ export type {
   SharePrivateOptions,
 } from "./core/types";
 
-// ── Utilities (for advanced use) ──────────────────────────────────────────────
+// ── Utilities (for advanced use) ───────────────────────────────────────────────
 export {
   SCHEMA_VERSION,
   MAJIK_UNIVERSAL_ID_VERSION,
@@ -161,7 +140,11 @@ export {
   normalizeToE164,
   isVerificationLocked,
   verificationLockDaysRemaining,
+  computeBundleHash,             // NEW
+  bundleToSigningKeyMaterial,    // NEW
+  signatureToSigningKeyMaterial, // NEW
   type IDHashKeyMaterial,
+  type SigningKeyMaterial,       // NEW
 } from "./core/utils";
 
 // ── Mapper (for advanced use — build your own webhook handler) ────────────────

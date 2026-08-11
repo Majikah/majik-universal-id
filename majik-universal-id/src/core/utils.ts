@@ -518,7 +518,6 @@ export function assertTimestampFresh(
 // WEBHOOK HMAC VERIFICATION
 // ─────────────────────────────────────────────
 
-
 /**
  * Verify a Didit webhook HMAC from the raw request body string.
  *
@@ -660,4 +659,40 @@ function _roundFloats(obj: unknown): unknown {
     return Math.round(obj * 10000) / 10000;
   }
   return obj;
+}
+
+/**
+ * Signing-key-only key material — the subset of MajikKeyPublicBundle that
+ * actually appears inside a MajikSignatureJSON envelope (signerEdPublicKey /
+ * signerMlDsaPublicKey). X25519 / ML-KEM are intentionally excluded: they're
+ * encryption-role keys, never embedded in a signature, and already covered
+ * separately by computeIDHash/verifyIDHash on the MUID row itself.
+ */
+export interface SigningKeyMaterial {
+  ed_public_key: Base64;
+  ml_dsa_public_key: Base64;
+}
+
+export function computeBundleHash(keys: SigningKeyMaterial): SHA3_512Hash {
+  const canonical = [keys.ed_public_key, keys.ml_dsa_public_key].join(":");
+  return computeSHA3_512(canonical);
+}
+
+export function bundleToSigningKeyMaterial(
+  bundle: MajikKeyPublicBundle,
+): SigningKeyMaterial {
+  return {
+    ed_public_key: bundle.ed_public_key,
+    ml_dsa_public_key: bundle.ml_dsa_public_key,
+  };
+}
+
+export function signatureToSigningKeyMaterial(sig: {
+  signerEdPublicKey: Base64;
+  signerMlDsaPublicKey: Base64;
+}): SigningKeyMaterial {
+  return {
+    ed_public_key: sig.signerEdPublicKey,
+    ml_dsa_public_key: sig.signerMlDsaPublicKey,
+  };
 }
