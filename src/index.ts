@@ -9,6 +9,7 @@ export type * from "./core/schema";
 
 // ── Didit webhook ─────────────────────────────────────────────────────
 export * from "./core/didit/webhook";
+export type * from "./core/didit/schema";
 
 // ── Class-layer types ────────────────────────────────────────────────────────
 export type * from "./core/types";
