@@ -2150,3 +2150,9 @@ export class MajikUniversalID {
     }
   }
 }
+
+// Freeze static methods
+Object.freeze(MajikUniversalID);
+
+// Freeze instance methods
+Object.freeze(MajikUniversalID.prototype);

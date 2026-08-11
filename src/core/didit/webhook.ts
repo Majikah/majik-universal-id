@@ -614,3 +614,9 @@ export class DiditWebhookMapperImpl implements DiditWebhookMapperInterface {
 
 /** Singleton instance — import this directly for convenience */
 export const diditMapper = new DiditWebhookMapperImpl();
+
+// Freeze static methods
+Object.freeze(DiditWebhookMapperImpl);
+
+// Freeze instance methods
+Object.freeze(DiditWebhookMapperImpl.prototype);
