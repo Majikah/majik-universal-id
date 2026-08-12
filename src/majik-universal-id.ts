@@ -155,7 +155,7 @@ export class MajikUniversalID {
 
   readonly #account_id: string;
   readonly #timestamp: ISODateTime;
-  readonly #hash: SHA3_512Hash;
+  #hash: SHA3_512Hash;
 
   #public_key: Base64;
   // AFTER — rotation is the one sanctioned mutation path; every other write
@@ -1354,7 +1354,7 @@ export class MajikUniversalID {
         timestamp,
       });
       const certSig = await MajikSignature.sign(certPayload, options.oldKey, {
-        contentType: "application/majik-rotation-certificate",
+        contentType: "application/vnd.majikah.mjksig",
         timestamp,
       });
       rotationCertificate = certSig.toJSON();
@@ -1366,8 +1366,42 @@ export class MajikUniversalID {
       bundleToSigningKeyMaterial(newKeyBundle),
     );
 
+    // ── Recompute the ID integrity hash against the NEW key material ─────────
+    // This was previously omitted — #hash stayed frozen at creation-time
+    // values, causing verifyIDHash() to fail on every rotated record.
+    const newIDHash = computeIDHash(this.#id, this.#user_id, this.#timestamp, {
+      x25519_public_key: newKeyBundle.x25519_public_key,
+      ed_public_key: newKeyBundle.ed_public_key,
+      ml_kem_public_key: newKeyBundle.ml_kem_public_key,
+      ml_dsa_public_key: newKeyBundle.ml_dsa_public_key,
+    });
+
     this.#signing_key = newKeyBundle;
     this.#public_key = newKey.publicKeyBase64;
+    this.#hash = newIDHash;
+
+    // ── Re-sign the core identity fields with the NEW key ─────────────────────
+    // #signature is a claim "this key attests to {id, user_id, timestamp, hash}".
+    // Once #hash changes above, the old signature (signed by the old key, over
+    // the old hash) no longer describes the live record. Re-sign with newKey
+    // so #signature stays a valid, current attestation — mirrors create()'s
+    // canonicalPayload/signedFields pattern exactly.
+    const canonicalPayload = JSON.stringify({
+      id: this.#id,
+      user_id: this.#user_id,
+      timestamp: this.#timestamp,
+      hash: newIDHash,
+    });
+    const majikSig = await MajikSignature.sign(canonicalPayload, newKey, {
+      contentType: "application/majikid",
+      timestamp,
+    });
+    this.#signature = MajikUniversalID._buildIDSignature(majikSig.toJSON(), [
+      "id",
+      "user_id",
+      "timestamp",
+      "hash",
+    ]);
 
     this.#metadata = {
       ...this.#metadata,
