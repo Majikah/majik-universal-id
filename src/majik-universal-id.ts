@@ -440,7 +440,7 @@ export class MajikUniversalID {
     });
 
     const userRef = MajikUniversalID._buildUserRef(user, timestamp);
-    const publicProfile = MajikUniversalID._buildPublicProfile(user, options);
+    const publicProfile = MajikUniversalID._buildPublicProfile(user);
     const rawPrivate = MajikUniversalID._buildRawPrivateInfo(user);
     const didit = MajikUniversalID._buildEmptyDidit();
     const settings = MajikUniversalID._buildSettings(user, options);
@@ -1317,6 +1317,7 @@ export class MajikUniversalID {
    *   falls to step-up auth at the server layer.
    */
   async rotateKey(
+    user: MajikUser,
     newKey: MajikKey,
     options: { reason: RotationReason; oldKey?: MajikKey },
   ): Promise<{
@@ -1403,14 +1404,22 @@ export class MajikUniversalID {
       "hash",
     ]);
 
+    const rawPrivate = MajikUniversalID._buildRawPrivateInfo(user);
+    const publicProfile = MajikUniversalID._buildPublicProfile(user);
+
+    // Encrypt private info — uses the bound key's ML-KEM-768 public key only
+    const privateField = await MajikUniversalID._encryptPrivateInfo(
+      rawPrivate,
+      newKey,
+    );
+
+    // Attach rehydrated so privateInfo is accessible immediately after create()
+    privateField.rehydrated = rawPrivate;
+
     this.#metadata = {
       ...this.#metadata,
-      private: { encrypted: true as const, envelope: undefined },
-      didit: {
-        ...MajikUniversalID._buildEmptyDidit(IDTier.PENDING_REVERIFICATION),
-        re_verification_required: true,
-        rejection_reason: undefined,
-      },
+      private: privateField,
+      public: publicProfile,
     };
 
     this.#user_ref = {
@@ -1907,10 +1916,7 @@ export class MajikUniversalID {
     };
   }
 
-  private static _buildPublicProfile(
-    user: MajikUser,
-    _options: CreateUniversalIDOptions,
-  ): PublicProfile {
+  private static _buildPublicProfile(user: MajikUser): PublicProfile {
     const meta = user.metadata;
     return {
       display_name: user.displayName,
