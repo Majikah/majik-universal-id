@@ -696,3 +696,17 @@ export function signatureToSigningKeyMaterial(sig: {
     ml_dsa_public_key: sig.signerMlDsaPublicKey,
   };
 }
+
+
+export function normalizeISODateTime(value: string): ISODateTime {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new MajikUniversalIDValidationError(
+      `Invalid ISO 8601 timestamp: ${value}`,
+      "timestamp",
+    );
+  }
+
+  return date.toISOString();
+}

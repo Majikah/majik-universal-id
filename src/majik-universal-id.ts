@@ -138,6 +138,7 @@ import {
   bundleToSigningKeyMaterial,
   signatureToSigningKeyMaterial,
   base64ToBytes,
+  normalizeISODateTime,
 } from "./core/utils";
 
 // ─────────────────────────────────────────────
@@ -557,8 +558,14 @@ export class MajikUniversalID {
     options?: FromJSONOptions,
   ): Promise<MajikUniversalID> {
     try {
-      const data: MajikUniversalIDJSON =
+      const raw: MajikUniversalIDJSON =
         typeof json === "string" ? JSON.parse(json) : json;
+
+      const data: MajikUniversalIDJSON = {
+        ...raw,
+        timestamp: normalizeISODateTime(raw.timestamp),
+        last_update: normalizeISODateTime(raw.last_update),
+      };
 
       MajikUniversalID._validateJSON(data);
 
