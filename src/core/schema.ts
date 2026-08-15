@@ -10,6 +10,13 @@
  */
 
 import {
+  ED25519PublicKey,
+  MajikKeyAddress,
+  MajikKeyFingerprint,
+  MLDSA87PublicKey,
+  MLKEM768PublicKey,
+} from "@majikah/majik-key";
+import {
   DeviceType,
   DiditStageStatus,
   SignatureVerificationOutcome,
@@ -27,6 +34,7 @@ import {
   NotificationChannel,
   VisibilityScope,
 } from "./enums";
+import { ED25519Signature, MLDSA87Signature } from "@majikah/majik-signature";
 
 // ─────────────────────────────────────────────
 // PRIMITIVE / SHARED TYPES
@@ -119,10 +127,10 @@ export interface MajikUserRef {
 
 export interface MajikKeyPublicBundle {
   fingerprint: string;
-  x25519_public_key: Base64; // 32 bytes
-  ed_public_key: Base64; // 32 bytes
-  ml_dsa_public_key: Base64; // 2592 bytes
-  ml_kem_public_key: Base64; // 1184 bytes
+  x25519_public_key: MajikKeyAddress; // 32 bytes
+  ed_public_key: ED25519PublicKey; // 32 bytes
+  ml_dsa_public_key: MLDSA87PublicKey; // 2592 bytes
+  ml_kem_public_key: MLKEM768PublicKey; // 1184 bytes
   kdf_version: 1 | 2;
   registered_at: ISODateTime;
 }
@@ -134,11 +142,11 @@ export interface MajikKeyPublicBundle {
 export interface MajikSignatureEnvelope {
   version: 1;
   signer_id: string;
-  signer_ed_public_key: Base64;
-  signer_ml_dsa_public_key: Base64;
+  signer_ed_public_key: ED25519PublicKey;
+  signer_ml_dsa_public_key: MLDSA87PublicKey;
   content_hash: SHA256Base64;
-  ed_signature: Base64;
-  ml_dsa_signature: Base64;
+  ed_signature: ED25519Signature;
+  ml_dsa_signature: MLDSA87Signature;
   content_type?: string;
   signed_at: ISODateTime;
 }
@@ -435,12 +443,12 @@ export interface MajikIDMetadata {
 
 export interface MajikIDSignature {
   algorithm: SignatureAlgorithm;
-  signer_fingerprint: string;
-  signer_ed_public_key: Base64;
-  signer_ml_dsa_public_key: Base64;
+  signer_fingerprint: MajikKeyFingerprint;
+  signer_ed_public_key: ED25519PublicKey;
+  signer_ml_dsa_public_key: MLDSA87PublicKey;
   content_hash: SHA256Base64;
-  ed_signature: Base64;
-  ml_dsa_signature: Base64;
+  ed_signature: ED25519Signature;
+  ml_dsa_signature: MLDSA87Signature;
   signed_fields: string[];
   signed_at: ISODateTime;
   serialized_envelope: Base64;
@@ -598,7 +606,7 @@ export type KeyGenerationStatus = "active" | "rotated" | "revoked_compromised";
 export interface KeyGenerationRecord {
   id: string;
   muid_id: string;
-  fingerprint: string;
+  fingerprint: MajikKeyFingerprint;
   bundle_hash: SHA3_512Hash;
   kdf_version: 1 | 2;
   status: KeyGenerationStatus;

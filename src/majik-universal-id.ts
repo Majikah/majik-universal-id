@@ -1429,6 +1429,7 @@ export class MajikUniversalID {
       last_synced_at: timestamp,
     };
 
+  
     this._touch();
 
     return {

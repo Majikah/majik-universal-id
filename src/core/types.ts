@@ -6,6 +6,7 @@
  * External package types are imported directly from their packages.
  */
 
+import { MajikKeyAddress } from "@majikah/majik-key";
 import type { DiditMapperResult } from "./didit/schema";
 import { DiditStage, IDTier, SignatureVerificationOutcome } from "./enums";
 import type {
@@ -146,7 +147,7 @@ export interface MajikUniversalIDJSON {
    * Primary X25519 public key, base64 — 32 bytes.
    * Fingerprint (SHA-256 of this key) = signerId in MajikSignature envelopes.
    */
-  public_key: Base64;
+  public_key: MajikKeyAddress;
   /**
    * The single MajikKey bundle bound to this identity.
    * A MajikUniversalID is permanently bound to exactly one MajikKey.

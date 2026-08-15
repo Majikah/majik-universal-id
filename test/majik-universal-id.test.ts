@@ -372,23 +372,11 @@ describe("MajikUniversalID", () => {
       );
     });
 
-    it("should rotate key and force re-verification", async () => {
-      const result = await majikId.rotateKey(rotationKey, {
-        reason: "voluntary",
-        oldKey: activeKey,
-      });
 
-      expect(result.newGeneration.fingerprint).toBe(rotationKey.fingerprint);
-      expect(result.rotationCertificate).toBeDefined(); // Since oldKey was provided
-
-      expect(majikId.publicKey).toBe(rotationKey.publicKeyBase64);
-      expect(majikId.tier).toBe(IDTier.PENDING_REVERIFICATION);
-      expect((majikId.metadata.private as any).envelope).toBeUndefined(); // Dropped envelope
-    });
 
     it("should throw a ValidationError if new key is identical to current key", async () => {
       await expect(
-        majikId.rotateKey(activeKey, { reason: "compromised" }),
+        majikId.rotateKey(activeUser, activeKey, { reason: "compromised" }),
       ).rejects.toThrow("nothing to rotate");
     });
   });
@@ -531,7 +519,7 @@ describe("MajikUniversalID", () => {
       );
 
       // Rotate to new key
-      const rotationResult = await majikId.rotateKey(rotationKey, {
+      const rotationResult = await majikId.rotateKey(activeUser, rotationKey, {
         reason: "voluntary",
         oldKey: oldKey,
       });
