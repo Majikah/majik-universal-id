@@ -49,13 +49,13 @@
   },
   "dependencies": {
     "@majikah/majik-envelope": "^0.1.0",
-    "@majikah/majik-key": "^0.5.2",
-    "@majikah/majik-signature": "^0.6.0",
+    "@majikah/majik-key": "^0.6.0",
+    "@majikah/majik-signature": "^0.7.1",
     "@noble/hashes": "^2.3.0",
     "@thezelijah/majik-user": "^1.0.9"
   },
   "devDependencies": {
-    "@types/node": "^26.6.2",
-    "vitest": "^5.0.1"
+    "@types/node": "^26.6.3",
+    "vitest": "^5.0.2"
   }
 }
