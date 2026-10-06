@@ -7,8 +7,8 @@
  */
 
 import { MajikKeyAddress } from "@majikah/majik-key";
-import type { DiditMapperResult } from "./didit/schema";
-import { DiditStage, IDTier, SignatureVerificationOutcome } from "./enums";
+import type { DiditMapperResult } from "./didit/schema.js";
+import { DiditStage, IDTier, SignatureVerificationOutcome } from "./enums.js";
 import type {
   Base64,
   MajikKeyPublicBundle,
@@ -19,7 +19,7 @@ import type {
   MajikIDSettings,
   SHA3_512Hash,
   SignatureTrustLevel,
-} from "./schema";
+} from "./schema.js";
 
 // ── External package surface (no re-declaration) ──────────────────────────────
 export type { MajikKey } from "@majikah/majik-key";
@@ -37,7 +37,7 @@ export type {
 } from "@majikah/majik-envelope";
 
 // ── Re-export DiditMapperResult for use in WebhookProcessResult ───────────────
-export type { DiditMapperResult } from "./didit/schema";
+export type { DiditMapperResult } from "./didit/schema.js";
 
 // ─────────────────────────────────────────────
 // FACTORY OPTIONS
@@ -189,7 +189,7 @@ export interface DecryptPrivateResult {
   /**
    * The decrypted private info — only present when success === true.
    */
-  data?: import("./schema").PrivatePersonalInfo;
+  data?: import("./schema.js").PrivatePersonalInfo;
   /**
    * Reason for failure — only present when success === false.
    * Errors are returned, not thrown, to allow graceful handling.

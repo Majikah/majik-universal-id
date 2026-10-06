@@ -8,6 +8,13 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
@@ -48,11 +55,11 @@
     "update": "npm i @majikah/majik-envelope@latest @majikah/majik-key@latest @majikah/majik-signature@latest"
   },
   "dependencies": {
-    "@majikah/majik-envelope": "^0.2.1",
-    "@majikah/majik-key": "^0.7.0",
-    "@majikah/majik-signature": "^0.7.2",
+    "@majikah/majik-envelope": "^0.3.0",
+    "@majikah/majik-key": "^1.0.2",
+    "@majikah/majik-signature": "^0.9.2",
     "@noble/hashes": "^2.3.0",
-    "@thezelijah/majik-user": "^1.0.9"
+    "@thezelijah/majik-user": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

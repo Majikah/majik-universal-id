@@ -41,24 +41,24 @@ vi.mock("../src/core/didit/webhook", () => ({
 function setupTestUser(): MajikUser {
   // Assuming a standard constructor or factory for MajikUser
   // This provides the bare minimum valid payload for UniversalID creation
-  return new MajikUser({
-    id: "usr_01HGW...",
-    email: "test@majikah.dev",
-    displayName: "Test User",
-    hash: "dummy-hash-base64",
-    createdAt: new Date(),
-    lastUpdate: new Date(),
 
-    metadata: {
-      name: { first_name: "Test", last_name: "User" },
-      birthdate: "1990-01-01",
-      gender: "Male",
-    },
-    settings: {
-      system: { isRestricted: false },
-      notifications: true,
-    },
+  const newUser = MajikUser.initialize(
+    "test@majikah.solutions",
+    "Zelijah",
+    "abc123456",
+  );
+
+  newUser.updateMetadata({
+    name: { first_name: "Test", last_name: "User" },
+    birthdate: "1990-01-01",
+    gender: "Male",
   });
+
+  newUser.updateSettings({
+    system: { isRestricted: false },
+    notifications: true,
+  });
+  return newUser;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +211,7 @@ describe("MajikUniversalID", () => {
 
       expect(result.success).toBe(true);
       expect(majikId.isPrivateDecrypted).toBe(true);
-      expect(majikId.privateInfo.primary_email).toBe("test@majikah.dev");
+      expect(majikId.privateInfo.primary_email).toBe("test@majikah.solutions");
     });
 
     it("should generate a valid scanner string when sharing private info", async () => {
@@ -371,8 +371,6 @@ describe("MajikUniversalID", () => {
         baseOptions,
       );
     });
-
-
 
     it("should throw a ValidationError if new key is identical to current key", async () => {
       await expect(

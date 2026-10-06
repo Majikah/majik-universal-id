@@ -51,7 +51,7 @@ import {
   SignatureAlgorithm,
   NotificationChannel,
   VisibilityScope,
-} from "./core/enums";
+} from "./core/enums.js";
 
 import type {
   MajikIDMetadata,
@@ -76,7 +76,7 @@ import type {
   KeyGenerationRecord,
   RotationAuthorizedVia,
   RotationReason,
-} from "./core/schema";
+} from "./core/schema.js";
 
 import type {
   CreateUniversalIDOptions,
@@ -89,15 +89,15 @@ import type {
   FromJSONOptions,
   DecryptPrivateResult,
   SharePrivateOptions,
-} from "./core/types";
+} from "./core/types.js";
 
 import type {
   DiditWebhookPayload,
   DiditWebhookHeaders,
   DiditMapperResult,
-} from "./core/didit/schema";
+} from "./core/didit/schema.js";
 
-import { diditMapper } from "./core/didit/webhook";
+import { diditMapper } from "./core/didit/webhook.js";
 
 import {
   MajikUniversalIDError,
@@ -115,7 +115,7 @@ import {
   MajikUniversalIDPrivateInfoLockedError,
   MajikUniversalIDPrivateInfoEncryptionError,
   MajikUniversalIDPrivateInfoNotYetAvailableError,
-} from "./core/errors";
+} from "./core/errors.js";
 
 import {
   SCHEMA_VERSION,
@@ -139,7 +139,7 @@ import {
   signatureToSigningKeyMaterial,
   base64ToBytes,
   normalizeISODateTime,
-} from "./core/utils";
+} from "./core/utils.js";
 
 // ─────────────────────────────────────────────
 // MAJIK UNIVERSAL ID
@@ -1429,7 +1429,6 @@ export class MajikUniversalID {
       last_synced_at: timestamp,
     };
 
-  
     this._touch();
 
     return {

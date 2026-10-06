@@ -65,7 +65,7 @@
  * ── END CHANGELOG ────────────────────────────────────────────────────────────
  */
 
-import { DiditStage } from "../enums";
+import { DiditStage } from "../enums.js";
 import type {
   ISODateTime,
   CountryCode,
@@ -78,7 +78,7 @@ import type {
   DiditPhoneVerification,
   DiditIPAnalysis,
   DiditAMLScreening,
-} from "../schema";
+} from "../schema.js";
 
 // ─────────────────────────────────────────────
 // SHARED PRIMITIVES

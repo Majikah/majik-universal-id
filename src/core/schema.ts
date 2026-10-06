@@ -33,7 +33,7 @@ import {
   SignatureAlgorithm,
   NotificationChannel,
   VisibilityScope,
-} from "./enums";
+} from "./enums.js";
 import { ED25519Signature, MLDSA87Signature } from "@majikah/majik-signature";
 
 // ─────────────────────────────────────────────

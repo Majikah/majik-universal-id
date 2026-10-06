@@ -45,7 +45,7 @@ import {
   DiditStageStatus,
   DocumentType,
   Gender,
-} from "./enums";
+} from "./enums.js";
 
 import type {
   MajikID,
@@ -56,19 +56,19 @@ import type {
   Base64,
   CountryCode,
   YYYYMMDD,
-} from "./schema";
+} from "./schema.js";
 
 import type {
   DiditNodeStatus,
   DiditSessionStatus,
   DiditWebhookHeaders,
-} from "./didit/schema";
+} from "./didit/schema.js";
 
 import {
   MajikUniversalIDKeyError,
   MajikUniversalIDValidationError,
   MajikUniversalIDWebhookSignatureError,
-} from "./errors";
+} from "./errors.js";
 
 // ─────────────────────────────────────────────
 // CONSTANTS
@@ -696,7 +696,6 @@ export function signatureToSigningKeyMaterial(sig: {
     ml_dsa_public_key: sig.signerMlDsaPublicKey,
   };
 }
-
 
 export function normalizeISODateTime(value: string): ISODateTime {
   const date = new Date(value);

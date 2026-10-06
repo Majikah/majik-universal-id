@@ -87,7 +87,7 @@ import type {
   DiditMapperResult,
   DiditNodeStatus,
   DiditWebhookMapperInterface,
-} from "./schema";
+} from "./schema.js";
 
 import {
   DiditStage,
@@ -97,7 +97,7 @@ import {
   IPRiskLevel,
   VerificationProvider,
   DeviceType,
-} from "../enums";
+} from "../enums.js";
 
 import type {
   DiditVerification,
@@ -110,7 +110,7 @@ import type {
   DiditSessionLog,
   GeoLocation,
   SHA3_512Hash,
-} from "../schema";
+} from "../schema.js";
 
 import {
   mapNodeStatus,
@@ -123,8 +123,8 @@ import {
   unixToISO,
   now,
   uuidv7,
-} from "../utils";
-import { DiditStageStatus } from "../enums";
+} from "../utils.js";
+import { DiditStageStatus } from "../enums.js";
 
 // ─────────────────────────────────────────────
 // TERMINAL STATUS SET
