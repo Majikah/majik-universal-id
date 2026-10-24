@@ -543,7 +543,11 @@ export type MajikIDPublicView = Pick<
   /** Public key material needed to verify any content signed by this identity */
   signing_key: Pick<
     MajikKeyPublicBundle,
-    "fingerprint" | "ed_public_key" | "ml_dsa_public_key" | "registered_at"
+    | "fingerprint"
+    | "ed_public_key"
+    | "ml_dsa_public_key"
+    | "ml_kem_public_key"
+    | "registered_at"
   >;
   /**
    * Per-stage verification pass/fail map derived from completed_stages.

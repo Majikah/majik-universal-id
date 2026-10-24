@@ -1620,6 +1620,7 @@ export class MajikUniversalID {
       signing_key: {
         fingerprint: this.#signing_key.fingerprint,
         ed_public_key: this.#signing_key.ed_public_key,
+        ml_kem_public_key: this.#signing_key.ml_kem_public_key,
         ml_dsa_public_key: this.#signing_key.ml_dsa_public_key,
         registered_at: this.#signing_key.registered_at,
       },
