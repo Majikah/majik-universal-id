@@ -377,6 +377,122 @@ describe("MajikUniversalID", () => {
         majikId.rotateKey(activeUser, activeKey, { reason: "compromised" }),
       ).rejects.toThrow("nothing to rotate");
     });
+
+    it("should rotate through a native signer callback and verify both attestations", async () => {
+      const replacement = await MajikUniversalID.create(
+        activeUser,
+        rotationKey,
+        baseOptions,
+      );
+      const {
+        registered_at: _registeredAt,
+        ...replacementBundle
+      } = replacement.signingKey;
+
+      const result = await majikId.rotateKeyWithSigner(
+        activeUser,
+        replacementBundle,
+        {
+          reason: "voluntary",
+          newAccountId: rotationKey.fingerprint,
+          oldAccountId: activeKey.fingerprint,
+          sign: async (content, accountId, signingOptions) => {
+            const signer =
+              accountId === activeKey.fingerprint
+                ? activeKey
+                : accountId === rotationKey.fingerprint
+                  ? rotationKey
+                  : null;
+            if (!signer) throw new Error("Unexpected account requested");
+            return (
+              await MajikSignature.sign(content, signer, {
+                contentType: signingOptions.contentType,
+                timestamp: signingOptions.timestamp,
+              })
+            ).toJSON();
+          },
+        },
+      );
+
+      expect(result.newGeneration.fingerprint).toBe(rotationKey.fingerprint);
+      expect(result.newGeneration.authorized_via).toBe("old_key_signature");
+      expect(result.rotationCertificate?.signerId).toBe(activeKey.fingerprint);
+      expect(majikId.signingKey.fingerprint).toBe(rotationKey.fingerprint);
+      expect(majikId.tier).toBe(IDTier.PENDING_REVERIFICATION);
+      expect(majikId.toJSON().metadata.private.envelope).toBeUndefined();
+      expect(majikId.toJSON().signature.signer_fingerprint).toBe(
+        rotationKey.fingerprint,
+      );
+      expect(majikId.validate().is_valid).toBe(true);
+    });
+
+    it("should use step-up authorization when the outgoing signer is unavailable", async () => {
+      const replacement = await MajikUniversalID.create(
+        activeUser,
+        rotationKey,
+        baseOptions,
+      );
+      const {
+        registered_at: _registeredAt,
+        ...replacementBundle
+      } = replacement.signingKey;
+
+      const result = await majikId.rotateKeyWithSigner(
+        activeUser,
+        replacementBundle,
+        {
+          reason: "compromised",
+          newAccountId: rotationKey.fingerprint,
+          sign: async (content, accountId, signingOptions) => {
+            if (accountId !== rotationKey.fingerprint) {
+              throw new Error("Only the replacement signer is available");
+            }
+            return (
+              await MajikSignature.sign(content, rotationKey, {
+                contentType: signingOptions.contentType,
+                timestamp: signingOptions.timestamp,
+              })
+            ).toJSON();
+          },
+        },
+      );
+
+      expect(result.newGeneration.authorized_via).toBe("step_up_auth");
+      expect(result.rotationCertificate).toBeUndefined();
+      expect(result.newGeneration.reason).toBe("compromised");
+      expect(majikId.tier).toBe(IDTier.PENDING_REVERIFICATION);
+      expect(majikId.toJSON().metadata.private.envelope).toBeUndefined();
+    });
+
+    it("should reject a native signer that does not own the replacement bundle", async () => {
+      const replacement = await MajikUniversalID.create(
+        activeUser,
+        rotationKey,
+        baseOptions,
+      );
+      const {
+        registered_at: _registeredAt,
+        ...replacementBundle
+      } = replacement.signingKey;
+
+      await expect(
+        majikId.rotateKeyWithSigner(activeUser, replacementBundle, {
+          reason: "voluntary",
+          newAccountId: rotationKey.fingerprint,
+          sign: async (content, _accountId, signingOptions) =>
+            (
+              await MajikSignature.sign(content, activeKey, {
+                contentType: signingOptions.contentType,
+                timestamp: signingOptions.timestamp,
+              })
+            ).toJSON(),
+        }),
+      ).rejects.toThrow("replacement key did not produce a valid MUID attestation");
+
+      // Failed signing must not mutate the original identity.
+      expect(majikId.signingKey.fingerprint).toBe(activeKey.fingerprint);
+      expect(majikId.tier).toBe(IDTier.UNVERIFIED);
+    });
   });
 
   describe("Mutations & User Sync", () => {
