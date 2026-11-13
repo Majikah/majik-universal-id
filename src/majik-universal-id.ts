@@ -1409,7 +1409,9 @@ export class MajikUniversalID {
     // Rotation always invalidates the previous verification and removes the
     // old private-info envelope. Didit reverification will rebuild it under
     // the new key; do not create an envelope that the new key cannot decrypt.
-    const didit = MajikUniversalID._buildEmptyDidit(IDTier.PENDING_REVERIFICATION);
+    const didit = MajikUniversalID._buildEmptyDidit(
+      IDTier.PENDING_REVERIFICATION,
+    );
     didit.re_verification_required = true;
     didit.rejection_reason =
       options.reason === "compromised"
@@ -1446,7 +1448,6 @@ export class MajikUniversalID {
       rotationCertificate,
     };
   }
-
 
   /**
    * Rotate the identity when signing keys are managed by a native signer.
