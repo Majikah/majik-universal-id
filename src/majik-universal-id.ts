@@ -1404,22 +1404,23 @@ export class MajikUniversalID {
       "hash",
     ]);
 
-    const rawPrivate = MajikUniversalID._buildRawPrivateInfo(user);
     const publicProfile = MajikUniversalID._buildPublicProfile(user);
 
-    // Encrypt private info — uses the bound key's ML-KEM-768 public key only
-    const privateField = await MajikUniversalID._encryptPrivateInfo(
-      rawPrivate,
-      newKey,
-    );
-
-    // Attach rehydrated so privateInfo is accessible immediately after create()
-    privateField.rehydrated = rawPrivate;
+    // Rotation always invalidates the previous verification and removes the
+    // old private-info envelope. Didit reverification will rebuild it under
+    // the new key; do not create an envelope that the new key cannot decrypt.
+    const didit = MajikUniversalID._buildEmptyDidit(IDTier.PENDING_REVERIFICATION);
+    didit.re_verification_required = true;
+    didit.rejection_reason =
+      options.reason === "compromised"
+        ? "Signing key reported compromised; full reverification required."
+        : "Signing key rotated; full reverification required.";
 
     this.#metadata = {
       ...this.#metadata,
-      private: privateField,
+      private: { encrypted: true },
       public: publicProfile,
+      didit,
     };
 
     this.#user_ref = {
@@ -1436,6 +1437,197 @@ export class MajikUniversalID {
         fingerprint: newKey.fingerprint,
         bundle_hash: bundleHash,
         kdf_version: (newKey.kdfVersion ?? 1) as 1 | 2,
+        status: "active",
+        activated_at: timestamp,
+        reason: options.reason,
+        authorized_via: authorizedVia,
+        rotation_certificate: rotationCertificate,
+      },
+      rotationCertificate,
+    };
+  }
+
+
+  /**
+   * Rotate the identity when signing keys are managed by a native signer.
+   *
+   * This is the Rust/secure-keystore counterpart to rotateKey(): the caller
+   * supplies only the replacement key's public bundle and a signer callback.
+   * The callback is invoked once for the optional outgoing-key certificate
+   * and once for the new identity attestation. Both returned signatures are
+   * verified here against the public bundles before any state is mutated.
+   *
+   * When oldAccountId is omitted, the generation is marked as step-up
+   * authorized. The server remains responsible for rotation cooldown/cap
+   * policy before persisting the returned JSON.
+   */
+  async rotateKeyWithSigner(
+    user: MajikUser,
+    newKey: Omit<MajikKeyPublicBundle, "registered_at">,
+    options: {
+      reason: RotationReason;
+      newAccountId: string;
+      oldAccountId?: string;
+      sign: (
+        content: string,
+        accountId: string,
+        signingOptions: { contentType: string; timestamp: string },
+      ) => Promise<MajikSignatureJSON>;
+    },
+  ): Promise<{
+    newGeneration: Omit<KeyGenerationRecord, "id" | "muid_id">;
+    rotationCertificate?: MajikSignatureJSON;
+  }> {
+    this._assertNotRestricted();
+    assertDefined(user, "user");
+    assertDefined(newKey, "newKey");
+    assertDefined(options, "options");
+    assertDefined(options.reason, "options.reason");
+    assertNonEmptyString(options.newAccountId, "options.newAccountId");
+    assertDefined(options.sign, "options.sign");
+
+    if (user.id !== this.#user_id) {
+      throw new MajikUniversalIDValidationError(
+        "The supplied MajikUser does not own this Universal ID.",
+        "user",
+      );
+    }
+    const userValidation = user.validate();
+    if (!userValidation.isValid) {
+      throw new MajikUniversalIDValidationError(
+        `Invalid MajikUser: ${userValidation.errors.join(", ")}`,
+      );
+    }
+
+    if (
+      !newKey.fingerprint ||
+      !newKey.x25519_public_key ||
+      !newKey.ed_public_key ||
+      !newKey.ml_dsa_public_key ||
+      !newKey.ml_kem_public_key ||
+      (newKey.kdf_version !== 1 && newKey.kdf_version !== 2)
+    ) {
+      throw new MajikUniversalIDKeyError(
+        "Replacement key is missing required public material or has an unsupported KDF version.",
+      );
+    }
+    if (newKey.fingerprint === this.#signing_key.fingerprint) {
+      throw new MajikUniversalIDValidationError(
+        "New key is identical to the current bound key — nothing to rotate.",
+        "newKey",
+      );
+    }
+
+    const timestamp = now();
+    const nextBundle: MajikKeyPublicBundle = {
+      ...newKey,
+      registered_at: timestamp,
+    };
+    const bundleHash = computeBundleHash(
+      bundleToSigningKeyMaterial(nextBundle),
+    );
+
+    let rotationCertificate: MajikSignatureJSON | undefined;
+    let authorizedVia: RotationAuthorizedVia = "step_up_auth";
+
+    if (options.oldAccountId) {
+      assertNonEmptyString(options.oldAccountId, "options.oldAccountId");
+      const certificatePayload = JSON.stringify({
+        new_fingerprint: nextBundle.fingerprint,
+        timestamp,
+      });
+      const certificate = await options.sign(
+        certificatePayload,
+        options.oldAccountId,
+        {
+          contentType: "application/vnd.majikah.mjksig",
+          timestamp,
+        },
+      );
+      const certificateVerification = MajikSignature.verify(
+        certificatePayload,
+        certificate,
+        bundleToSignerKeys(this.#signing_key),
+      );
+      if (!certificateVerification.valid) {
+        throw new MajikUniversalIDSigningError(
+          "The outgoing key did not produce a valid rotation certificate" +
+            (certificateVerification.reason
+              ? `: ${certificateVerification.reason}`
+              : ""),
+        );
+      }
+      rotationCertificate = certificate;
+      authorizedVia = "old_key_signature";
+    }
+
+    const newHash = computeIDHash(this.#id, this.#user_id, this.#timestamp, {
+      x25519_public_key: nextBundle.x25519_public_key,
+      ed_public_key: nextBundle.ed_public_key,
+      ml_kem_public_key: nextBundle.ml_kem_public_key,
+      ml_dsa_public_key: nextBundle.ml_dsa_public_key,
+    });
+    const canonicalPayload = JSON.stringify({
+      id: this.#id,
+      user_id: this.#user_id,
+      timestamp: this.#timestamp,
+      hash: newHash,
+    });
+    const newAttestation = await options.sign(
+      canonicalPayload,
+      options.newAccountId,
+      { contentType: "application/majikid", timestamp },
+    );
+    const attestationVerification = MajikSignature.verify(
+      canonicalPayload,
+      newAttestation,
+      bundleToSignerKeys(nextBundle),
+    );
+    if (!attestationVerification.valid) {
+      throw new MajikUniversalIDSigningError(
+        "The replacement key did not produce a valid MUID attestation" +
+          (attestationVerification.reason
+            ? `: ${attestationVerification.reason}`
+            : ""),
+      );
+    }
+
+    // All signing and verification succeeds before mutating the domain model.
+    this.#signing_key = nextBundle;
+    this.#public_key = nextBundle.x25519_public_key;
+    this.#hash = newHash;
+    this.#signature = MajikUniversalID._buildIDSignature(newAttestation, [
+      "id",
+      "user_id",
+      "timestamp",
+      "hash",
+    ]);
+
+    const didit = MajikUniversalID._buildEmptyDidit(IDTier.PENDING_REVERIFICATION);
+    didit.re_verification_required = true;
+    didit.rejection_reason =
+      options.reason === "compromised"
+        ? "Signing key reported compromised; full reverification required."
+        : "Signing key rotated; full reverification required.";
+
+    this.#metadata = {
+      ...this.#metadata,
+      private: { encrypted: true },
+      public: MajikUniversalID._buildPublicProfile(user),
+      didit,
+    };
+    this.#user_ref = {
+      ...MajikUniversalID._buildUserRef(user, timestamp),
+      identity_verified: false,
+      phone_verified: false,
+    };
+    this._touch();
+
+    return {
+      newGeneration: {
+        fingerprint: nextBundle.fingerprint,
+        bundle_hash: bundleHash,
+        kdf_version: nextBundle.kdf_version,
         status: "active",
         activated_at: timestamp,
         reason: options.reason,
